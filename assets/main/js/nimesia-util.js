@@ -114,12 +114,25 @@ NM.util.ajax = function( setup ) {
         AP.loading?.begin?.();
     }
 
+    var ajaxOptions = {
+        url: settings.url,
+        method: settings.method,
+        data: settings.data
+    };
+
+    // Body JSON ( JSON.stringify ): va inviato come application/json. Col content-type
+    // di default ( form-urlencoded ) Lucee interpreta l'intero JSON come nome di un campo
+    // form e crea uno struct annidato per ogni "." contenuto: con payload grandi ( es. placca
+    // con molte liste SIMBOLO ) le migliaia di livelli mandano in StackOverflowError la
+    // richiesta. I controller leggono comunque il body da GetHTTPRequestData().content.
+    if ( typeof settings.data === "string"
+        && String( settings.method ).toUpperCase() != "GET"
+        && /^\s*[\[{]/.test( settings.data ) ) {
+        ajaxOptions.contentType = "application/json; charset=UTF-8";
+    }
+
     var data =
-		$.ajax( {
-		    url: settings.url,
-		    method: settings.method,
-		    data: settings.data
-		} )
+		$.ajax( ajaxOptions )
 		/*
 		    .done( function( xhr ) {
 
