@@ -31,7 +31,7 @@
                                 <hr class="mt-3">
 
                                 <div class="col-3 text-end">
-                                    <b>Email:</b>
+                                    <b>Nome:</b>
                                 </div>
                                 <div class="col-9">
                                     #prc.user.getAccount().getName()#

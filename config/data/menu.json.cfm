@@ -221,7 +221,7 @@
 		href: "#",
 		icon: "fas fa-calendar-alt",
 		title: "Pianificazione",
-		roles: "HIDDEN",
+		roles: "ADM",
 		items: [
 			{
 				href: "/manager/planning/gantt",
