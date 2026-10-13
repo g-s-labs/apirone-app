@@ -47,7 +47,7 @@
                     <input type="text" class="form-control" v-model="filters.str" placeholder="Nome">
                 </div>
                 <div class="col-sm-3">
-                    <label class="col-form-label">Tipo</label>
+                    <label class="col-form-label">Tipologia</label>
                     <select class="form-select" v-model="filters.workTypeId">
                         <option value="">-- tutti</option>
                         <option value="_none">-- non pianificati</option>
@@ -65,13 +65,16 @@
                         <label class="col-form-label">Nome</label>
                         <input type="text" class="form-control" v-model="newPerson.name" ref="newPersonName" placeholder="Nome e cognome" @keyup.enter="createPerson">
                     </div>
-                    <div class="col-sm-3">
-                        <label class="col-form-label">Tipo</label>
-                        <select class="form-select" v-model="newPerson.workTypeId">
-                            <option v-for="type in workTypes" :value="type.id" :key="type.id">{{ type.name }}</option>
-                        </select>
-                    </div>
                     <div class="col-sm-4">
+                        <label class="col-form-label">Tipologie</label>
+                        <div class="planning-type-chips">
+                            <span v-for="type in workTypes" :key="type.id" class="planning-type-chip"
+                                  :class="{ active: newPerson.workTypeIds.indexOf( type.id ) !== -1 }"
+                                  :style="chipStyle( type, newPerson.workTypeIds )"
+                                  @click="toggleType( newPerson.workTypeIds, type.id )">{{ type.name }}</span>
+                        </div>
+                    </div>
+                    <div class="col-sm-3">
                         <button type="button" class="btn btn-primary btn-sm" @click="createPerson" :disabled="!newPerson.name.trim()">
                             <i class="fas fa-save"></i> Crea
                         </button>
@@ -88,7 +91,7 @@
                     <thead>
                         <tr>
                             <th>Nome</th>
-                            <th style="width: 180px;">Tipo</th>
+                            <th style="width: 300px;" title="Clicca per attivare / togliere: la persona riceve le attività di queste tipologie">Tipologie</th>
                             <th v-for="day in dayNames" :key="day" class="text-center planning-hours-col">{{ day }}</th>
                             <th class="text-center" style="width: 100px;" title="Ora di inizio della giornata: le ore partono da qui, senza pausa">Inizio</th>
                             <th class="text-end">Settimana</th>
@@ -97,27 +100,30 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="person in filteredPeople" :key="person.id" :class="{ 'text-muted': !person.workTypeId }">
+                        <tr v-for="person in filteredPeople" :key="person.id" :class="{ 'text-muted': !planned( person ) }">
                             <td>
                                 {{ person.name }}
                                 <i v-if="!person.active" class="fas fa-user-slash planning-no-access ms-1" title="Senza accesso all'app"></i>
                             </td>
                             <td>
-                                <select class="form-select form-select-sm" v-model="person.workTypeId" @change="changeType( person )">
-                                    <option value="">-- non pianificato</option>
-                                    <option v-for="type in workTypes" :value="type.id" :key="type.id">{{ type.name }}</option>
-                                </select>
+                                <!--- tipologie della persona: nessuna = non si pianifica --->
+                                <div class="planning-type-chips">
+                                    <span v-for="type in workTypes" :key="type.id" class="planning-type-chip"
+                                          :class="{ active: person.workTypeIds.indexOf( type.id ) !== -1 }"
+                                          :style="chipStyle( type, person.workTypeIds )"
+                                          @click="toggleType( person.workTypeIds, type.id ); changeType( person )">{{ type.name }}</span>
+                                </div>
                             </td>
                             <td v-for="( day, index ) in dayNames" :key="day" class="text-center"
                                 :class="{ 'planning-weekend': index >= 5 }">
                                 <input type="number" min="0" max="24" step="0.5"
                                        class="form-control form-control-sm text-center planning-hours-input"
                                        v-model.number="person.hours[ index ]"
-                                       :disabled="!person.workTypeId"
+                                       :disabled="!planned( person )"
                                        @change="save( person )">
                             </td>
                             <td class="text-center">
-                                <select class="form-select form-select-sm" v-model="person.dayStart" :disabled="!person.workTypeId" @change="save( person )">
+                                <select class="form-select form-select-sm" v-model="person.dayStart" :disabled="!planned( person )" @change="save( person )">
                                     <option v-for="time in timeOptions" :key="time" :value="time">{{ time }}</option>
                                 </select>
                             </td>
@@ -278,5 +284,8 @@
     .planning-new-person { background: ##f4f7fc; border: 1px solid ##dbe4f3; border-radius: 6px; padding: 10px 12px; }
     .planning-cost-link { text-decoration: none; white-space: nowrap; }
     .planning-no-access { color: ##c3c9d2; font-size: 11px; }
+    .planning-type-chips { display: flex; flex-wrap: wrap; gap: 3px; min-width: 280px; }
+    .planning-type-chip { padding: 1px 7px; font-size: 11px; line-height: 17px; border: 1px solid ##ced4da; border-radius: 999px; color: ##6b7684; background: ##fff; cursor: pointer; user-select: none; }
+    .planning-type-chip.active { color: ##fff; font-weight: 600; }
 </style>
 </cfoutput>

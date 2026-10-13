@@ -1686,6 +1686,8 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		}
 
 		getPlanningService().copyQuotationWorkHours( originalQuotation.getId(), clonedQuotationId );
+		// la nuova versione resta nel progetto del Gantt della precedente
+		getPlanningService().copyProjectLink( originalQuotation.getId(), clonedQuotationId );
 
 		return clonedQuotationId;
 	}

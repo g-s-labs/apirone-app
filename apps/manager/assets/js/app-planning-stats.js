@@ -35,7 +35,7 @@ AP.planningStats = ( function() {
                         if ( state === "completed" && !project.completed ) return false;
                         if ( state === "over" && !this.isOver( project.totals ) ) return false;
                         if ( !str ) return true;
-                        return [ project.number, project.name, project.customer ].join( " " ).toLowerCase().indexOf( str ) !== -1;
+                        return [ project.label, project.name, project.rifLibero, project.customer ].join( " " ).toLowerCase().indexOf( str ) !== -1;
                     } );
                 },
 
@@ -70,10 +70,12 @@ AP.planningStats = ( function() {
                         callback: {
                             done: ( xhr ) => {
                                 this.loading = false;
-                                // numero decrescente, poi versione decrescente
-                                this.projects = ( xhr.data || [] ).slice().sort( function( a, b ) {
+                                // prima i progetti ( come arrivano ), poi i preventivi per numero e versione decrescenti
+                                const items = xhr.data || [];
+                                const quotations = items.filter( function( item ) { return item.kind !== "project"; } ).sort( function( a, b ) {
                                     return ( Number( b.number ) - Number( a.number ) ) || ( Number( b.version ) - Number( a.version ) );
                                 } );
+                                this.projects = items.filter( function( item ) { return item.kind === "project"; } ).concat( quotations );
                             },
                         },
                     } ).always( () => { this.loading = false; } );

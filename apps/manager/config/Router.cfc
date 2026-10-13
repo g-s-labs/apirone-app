@@ -346,7 +346,13 @@
 		post( "/ajax/planning/blocks/:id/extra" ).to( "PlanningAjaxController.setBlockExtra" ).end();
 		delete( "/ajax/planning/blocks/:id" ).to( "PlanningAjaxController.deleteBlock" ).end();
 		post( "/ajax/planning/blocks" ).to( "PlanningAjaxController.createBlock" ).end();
+		delete( "/ajax/planning/projects/:id/quotations/:quotationId" ).to( "PlanningAjaxController.unlinkQuotation" ).end();
+		post( "/ajax/planning/projects/:id/quotations" ).to( "PlanningAjaxController.linkQuotation" ).end();
+		post( "/ajax/planning/projects/:id/details" ).to( "PlanningAjaxController.updateProject" ).end();
+		delete( "/ajax/planning/projects/:id" ).to( "PlanningAjaxController.deleteProject" ).end();
 		post( "/ajax/planning/projects/:id" ).to( "PlanningAjaxController.saveProject" ).end();
+		post( "/ajax/planning/projects" ).to( "PlanningAjaxController.createProject" ).end();
+		get( "/ajax/planning/quotations" ).to( "PlanningAjaxController.searchQuotations" ).end();
 		get( "/ajax/planning/projects" ).to( "PlanningAjaxController.listProjects" ).end();
 		get( "/ajax/planning/gantt" ).to( "PlanningAjaxController.gantt" ).end();
 		get( "/planning/people" ).to( "PlanningController.people" ).end();

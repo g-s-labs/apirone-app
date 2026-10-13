@@ -1,9 +1,10 @@
 /**
- * Pianificazione ( Gantt ): persone con tipo di lavoro e ore disponibili per
- * giorno della settimana, ore di attività stimate per preventivo.
- * I tipi di lavoro ( config/data/workTypes.json.cfm ) sono anche i tipi di
- * attività del preventivo: le ore di montaggio vanno ai montatori, quelle di
- * produzione agli addetti alla produzione, e così via.
+ * Pianificazione ( Gantt ): persone con le loro tipologie di attività e le ore
+ * disponibili per giorno della settimana, ore di attività stimate per
+ * preventivo / progetto. Le tipologie ( tabella planning_work_types ) sono sia
+ * le attività di preventivi e progetti sia ciò che una persona sa fare: le ore
+ * di montaggio vanno a chi ha la tipologia Montaggio, e così via ( una persona
+ * può averne più d'una ).
  */
 component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
@@ -20,8 +21,49 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
 	variables.HOURS_COLUMNS = [ "hours_mon", "hours_tue", "hours_wed", "hours_thu", "hours_fri", "hours_sat", "hours_sun" ];
 
+	/**
+	 * Stato della pianificazione di un preventivo / progetto: si assegnano
+	 * persone solo "In corso"; "Concluso" esce dal Gantt; "In sospeso" e "Da
+	 * programmare" ( il default ) restano fuori finché non si possono quantificare.
+	 */
+	variables.PLANNING_STATUSES = [
+		{ "id" = "COR", "name" = "In corso" },
+		{ "id" = "CLS", "name" = "Concluso" },
+		{ "id" = "SOS", "name" = "In sospeso" },
+		{ "id" = "DAP", "name" = "Da programmare" }
+	];
+
+	variables.DATE_TYPES = [
+		{ "id" = "RIC", "name" = "Richiesta" },
+		{ "id" = "TAS", "name" = "Tassativa" }
+	];
+
+	variables.PRIORITIES = [
+		{ "id" = "A", "name" = "A ( urgente )" },
+		{ "id" = "B", "name" = "B ( mediamente urgente )" },
+		{ "id" = "C", "name" = "C ( non urgente )" }
+	];
+
+	/**
+	 * Tipologie di attività: [ { id, name, activity ( = name ), color } ].
+	 */
 	public Array function workTypes(){
-		return DeserializeJSON( FileRead( ExpandPath( "/config/data/workTypes.json.cfm" ) ) );
+		var result = [];
+		for ( var row in getDao().findWorkTypes() ) {
+			result.append( { "id" = row.work_type_id, "name" = row.name, "activity" = row.name, "color" = row.color } );
+		}
+		return result;
+	}
+
+	/**
+	 * Valori delle tendine di pianificazione ( pagina Ore progetti, Gantt ).
+	 */
+	public Struct function planningOptions(){
+		return {
+			"statuses"   = Duplicate( variables.PLANNING_STATUSES ),
+			"dateTypes"  = Duplicate( variables.DATE_TYPES ),
+			"priorities" = Duplicate( variables.PRIORITIES )
+		};
 	}
 
 	public Array function workTypeIds(){
@@ -36,7 +78,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
 	/**
 	 * Persone per la pagina Disponibilità e per il Gantt ( onlyWithType ):
-	 * { id, name, roleId, active, workTypeId, hours: [ lun .. dom ] }.
+	 * { id, name, roleId, active, workTypeIds: [ tipologie ], hours: [ lun .. dom ] }.
 	 */
 	public Array function listPeople( Boolean onlyWithType = false ){
 		var result = [];
@@ -52,7 +94,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 				"name"       = row.name ?: "",
 				"roleId"     = row.role_id,
 				"active"     = row.status_id == "ACT",
-				"workTypeId" = row.work_type_id ?: "",
+				"workTypeIds" = ListToArray( row.work_type_ids ?: "" ),
 				"hours"      = hours,
 				"dayStart"   = formatTime( Val( row.day_start_minutes ) ),
 				// tariffa in vigore oggi ( stringa vuota se non c'è )
@@ -65,12 +107,16 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	}
 
 	/**
-	 * Tipo di lavoro ( stringa vuota: la persona non si pianifica ) e ore da
+	 * Tipologie di attività ( nessuna: la persona non si pianifica ) e ore da
 	 * lunedì a domenica.
 	 */
-	public void function savePerson( required String userId, required String workTypeId, required Array hours, String dayStart = "08:00" ){
-		if ( Len( arguments.workTypeId ) && !ArrayContains( workTypeIds(), arguments.workTypeId ) ) {
-			Throw( type = "apirone.planning.InvalidWorkType", message = "Tipo di lavoro non valido: #arguments.workTypeId#" );
+	public void function savePerson( required String userId, required Array workTypeIds, required Array hours, String dayStart = "08:00" ){
+		// variables.: l'argomento workTypeIds nasconde la funzione omonima
+		var validIds = variables.workTypeIds();
+		for ( var workTypeId in arguments.workTypeIds ) {
+			if ( !ArrayContains( validIds, workTypeId ) ) {
+				Throw( type = "apirone.planning.InvalidWorkType", message = "Tipologia di attività non valida: #workTypeId#" );
+			}
 		}
 		if ( ArrayLen( arguments.hours ) != 7 ) {
 			Throw( type = "apirone.planning.InvalidHours", message = "Servono le ore dei 7 giorni della settimana." );
@@ -82,7 +128,10 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		} );
 
 		parseTime( arguments.dayStart );
-		getDao().updatePerson( arguments.userId, arguments.workTypeId, cleanHours, arguments.dayStart );
+		transaction {
+			getDao().updatePerson( arguments.userId, cleanHours, arguments.dayStart );
+			getDao().savePersonWorkTypes( arguments.userId, arguments.workTypeIds );
+		}
 	}
 
 	/**
@@ -90,7 +139,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	 * disattivati, con un'email segnaposto ( l'email è obbligatoria ) e una
 	 * password casuale. Ruolo Produzione, ore di default.
 	 */
-	public String function createPerson( required String name, required String workTypeId ){
+	public String function createPerson( required String name, required Array workTypeIds ){
 		if ( !Len( Trim( arguments.name ) ) ) {
 			Throw( type = "apirone.planning.NameRequired", message = "Il nome è obbligatorio." );
 		}
@@ -114,7 +163,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			var accountId = getAccountService().create( account );
 			user.setAccount( super.bean( "Account" ).setId( accountId ) );
 			var userId = getUserService().create( user );
-			savePerson( userId, arguments.workTypeId, defaultHours() );
+			savePerson( userId, arguments.workTypeIds, defaultHours() );
 		}
 
 		return userId;
@@ -123,69 +172,281 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	/* ======================= Progetti ( ore dei preventivi ) ======================= */
 
 	/**
-	 * Preventivi pianificabili ( "Confermato da cliente" / "Convertito in
-	 * ordine", più quelli che hanno già blocchi nel Gantt ) con ore stimate e
-	 * pianificate per tipo ( hours: { MON: { estimated, planned }, ... } ) e
-	 * stato del progetto ( completed: concluso, non si pianifica più ).
+	 * Voci del Gantt, tutte nella stessa forma:
+	 * - preventivi pianificabili ( attivi, in qualunque stato tranne Perso ed
+	 *   Estinto, più quelli che hanno già blocchi ), esclusi quelli collegati a
+	 *   un progetto ( kind "quotation" );
+	 * - progetti ( kind "project": nome + rif. libero, sempre pianificabili ),
+	 *   con i preventivi collegati ( quotations ).
+	 * Per ogni voce: label ( "n. 123/1" o il nome del progetto ), url ( pagina
+	 * del preventivo; vuoto per i progetti ), ore stimate e pianificate per tipo
+	 * ( hours: { MON: { estimated, budget, planned, extra }, ... } ) e la
+	 * pianificazione ( planningFields: stato, data con tipo, priorità, note;
+	 * completed = concluso, assignable = si possono assegnare persone ). L'id di
+	 * una voce è quello che i blocchi riportano in quotationId.
 	 */
-	public Array function plannableQuotations(){
-		var quotations = [];
-		var byId       = {};
+	public Array function plannableItems(){
+		var items = [];
+		var byId  = {};
 
 		for ( var row in getDao().findPlannableQuotations() ) {
-			var quotation = {
+			var item = {
 				"id"         = row.quotation_id,
+				"kind"       = "quotation",
+				"label"      = quotationLabel( row.quotation_number, row.version_number ?: "" ),
+				"url"        = "/manager/quotations/" & row.quotation_id,
 				"number"     = row.quotation_number,
 				"version"    = row.version_number ?: "",
 				"name"       = row.name ?: "",
 				"rifLibero"  = row.rif_libero ?: "",
 				"customer"   = row.customer ?: "",
 				"statusId"   = row.status_id ?: "",
+				"statusName" = row.status_name ?: "",
 				"plannable"  = IsBoolean( row.plannable ?: "" ) && row.plannable,
-				"completed"  = IsBoolean( row.completed ?: "" ) && row.completed,
 				"hours"      = {}
 			};
-			quotations.append( quotation );
-			byId[ row.quotation_id ] = quotation;
+			item.append( planningFields( row ) );
+			items.append( item );
+			byId[ row.quotation_id ] = item;
 		}
 
 		for ( var row in getDao().findPlannableQuotationHours() ) {
 			if ( byId.keyExists( row.quotation_id ) ) {
-				byId[ row.quotation_id ].hours[ row.work_type_id ] = {
-					"estimated" = Val( row.estimated ),
-					"budget"    = IsNumeric( row.budget ?: "" ) ? Val( row.budget ) : "",
-					// pianificate sulla stima; le extra sono a parte
-					"planned"   = Val( row.planned ),
-					"extra"     = Val( row.extra )
-				};
+				byId[ row.quotation_id ].hours[ row.work_type_id ] = hoursEntry( row );
 			}
 		}
 
-		return quotations;
+		for ( var project in listProjects() ) {
+			items.append( project );
+		}
+
+		return items;
 	}
 
 	/**
 	 * Pagina Progetti: ore stimate e budget per tipo ( struct tipo -> valore;
-	 * budget vuoto = nessun budget ) e progetto concluso. Si salvano anche su un
-	 * preventivo bloccato: la pianificazione avviene dopo la conferma del cliente.
+	 * budget vuoto = nessun budget ) e stato concluso di una voce del Gantt,
+	 * preventivo o progetto. Si salvano anche su un preventivo bloccato: la
+	 * pianificazione avviene dopo la conferma del cliente.
 	 */
 	public void function saveProject(
 		required String quotationId,
 		required Struct hours,
 		Struct budgets = {},
-		required Boolean completed,
+		required Struct planning,
 		String userId = ""
 	){
+		var cleanPlanning = checkPlanning( arguments.planning );
+
 		transaction {
-			saveQuotationWorkHours( arguments.quotationId, arguments.hours, arguments.budgets );
-			getDao().setCompleted( arguments.quotationId, arguments.completed, arguments.userId );
+			if ( isProject( arguments.quotationId ) ) {
+				saveWorkHours( arguments.quotationId, arguments.hours, arguments.budgets, true );
+				getDao().saveProjectPlanning( arguments.quotationId, cleanPlanning, arguments.userId );
+			} else {
+				saveQuotationWorkHours( arguments.quotationId, arguments.hours, arguments.budgets );
+				getDao().saveQuotationPlanning( arguments.quotationId, cleanPlanning, arguments.userId );
+			}
 		}
+	}
+
+	/**
+	 * Pianificazione di una voce, come arriva dalla pagina Ore progetti:
+	 * { statusId, dueDate ( yyyy-mm-dd o vuota ), dateType, priority, note }.
+	 * dueDate vale solo per i progetti: per i preventivi la data è quella
+	 * prevista di evasione e saveQuotationPlanning non la salva.
+	 * Restituisce i valori puliti; un valore non previsto è un errore.
+	 */
+	private Struct function checkPlanning( required Struct planning ){
+		var statusId = UCase( Trim( arguments.planning.statusId ?: "" ) );
+		var dateType = UCase( Trim( arguments.planning.dateType ?: "" ) );
+		var priority = UCase( Trim( arguments.planning.priority ?: "" ) );
+		var dueDate  = Trim( arguments.planning.dueDate ?: "" );
+		var note     = Trim( arguments.planning.note ?: "" );
+
+		if ( !ArrayContains( optionIds( variables.PLANNING_STATUSES ), statusId ) ) {
+			Throw( type = "apirone.planning.InvalidPlanning", message = "Stato della pianificazione non valido." );
+		}
+		if ( Len( dateType ) && !ArrayContains( optionIds( variables.DATE_TYPES ), dateType ) ) {
+			Throw( type = "apirone.planning.InvalidPlanning", message = "Tipo di data non valido." );
+		}
+		if ( Len( priority ) && !ArrayContains( optionIds( variables.PRIORITIES ), priority ) ) {
+			Throw( type = "apirone.planning.InvalidPlanning", message = "Priorità non valida." );
+		}
+		if ( Len( dueDate ) && !REFind( "^\d{4}-\d{2}-\d{2}$", dueDate ) ) {
+			Throw( type = "apirone.planning.InvalidPlanning", message = "Data non valida." );
+		}
+
+		return { "statusId" = statusId, "dueDate" = dueDate, "dateType" = dateType, "priority" = priority, "note" = note };
+	}
+
+	private Array function optionIds( required Array options ){
+		return arguments.options.map( function( option ){ return option.id; } );
+	}
+
+	/**
+	 * Campi di pianificazione di una voce dalla riga del DAO ( planning_status_id,
+	 * due_date, date_type, priority, planning_note ).
+	 */
+	private Struct function planningFields( required Struct row ){
+		var statusId = arguments.row.planning_status_id ?: "DAP";
+		return {
+			"planningStatusId" = statusId,
+			"completed"        = statusId == "CLS",
+			"assignable"       = statusId == "COR",
+			"dueDate"          = IsDate( arguments.row.due_date ?: "" ) ? DateFormat( arguments.row.due_date, "yyyy-mm-dd" ) : "",
+			"dateType"         = arguments.row.date_type ?: "",
+			"priority"         = arguments.row.priority ?: "",
+			"note"             = arguments.row.planning_note ?: ""
+		};
 	}
 
 	/**
 	 * hours / budgets: struct tipo -> valore.
 	 */
 	public void function saveQuotationWorkHours( required String quotationId, required Struct hours, Struct budgets = {} ){
+		saveWorkHours( arguments.quotationId, arguments.hours, arguments.budgets, false );
+	}
+
+	/* ======================= Progetti ======================= */
+
+	/*
+		Un progetto ( nome + rif. libero ) compare nel Gantt come un preventivo,
+		con ore stimate e budget propri. Raggruppa zero o più preventivi: uno
+		collegato non compare più da solo nel Gantt e, al collegamento, i suoi
+		blocchi passano al progetto ( scollegandolo restano al progetto ).
+	*/
+
+	/**
+	 * Progetti come voci del Gantt ( vedi plannableItems ), dal più recente.
+	 */
+	public Array function listProjects(){
+		var projects = [];
+		var byId     = {};
+
+		for ( var row in getDao().findProjects() ) {
+			var project = {
+				"id"         = row.project_id,
+				"kind"       = "project",
+				"label"      = row.name,
+				"url"        = "",
+				"number"     = "",
+				"version"    = "",
+				"name"       = row.name,
+				"rifLibero"  = row.rif_libero ?: "",
+				"customer"   = "",
+				"statusId"   = "",
+				"plannable"  = true,
+				"hours"      = {},
+				"quotations" = []
+			};
+			project.append( planningFields( row ) );
+			projects.append( project );
+			byId[ row.project_id ] = project;
+		}
+
+		for ( var row in getDao().findProjectHours() ) {
+			if ( byId.keyExists( row.project_id ) ) {
+				byId[ row.project_id ].hours[ row.work_type_id ] = hoursEntry( row );
+			}
+		}
+
+		for ( var row in getDao().findProjectQuotations() ) {
+			if ( byId.keyExists( row.project_id ) ) {
+				byId[ row.project_id ].quotations.append( quotationSummary( row ) );
+			}
+		}
+
+		return projects;
+	}
+
+	public String function createProject( required String name, String rifLibero = "", String createdBy = "" ){
+		checkProject( arguments.name, arguments.rifLibero );
+		return getDao().insertProject( arguments.name, arguments.rifLibero, arguments.createdBy );
+	}
+
+	public void function updateProject( required String projectId, required String name, String rifLibero = "" ){
+		loadProject( arguments.projectId );
+		checkProject( arguments.name, arguments.rifLibero );
+		getDao().updateProject( arguments.projectId, arguments.name, arguments.rifLibero );
+	}
+
+	/**
+	 * Elimina un progetto senza blocchi nel Gantt ( i preventivi collegati
+	 * tornano liberi ). Con blocchi va prima svuotato, per non perdere la
+	 * pianificazione per sbaglio.
+	 */
+	public void function deleteProject( required String projectId ){
+		loadProject( arguments.projectId );
+
+		if ( getDao().countProjectBlocks( arguments.projectId ) ) {
+			Throw( type = "apirone.planning.ProjectHasBlocks", message = "Il progetto ha blocchi pianificati nel Gantt: eliminali prima di eliminare il progetto." );
+		}
+
+		getDao().deleteProject( arguments.projectId );
+	}
+
+	/**
+	 * Collega un preventivo al progetto: i suoi blocchi nel Gantt passano al
+	 * progetto. Un preventivo sta al massimo in un progetto.
+	 */
+	public void function linkQuotation( required String projectId, required String quotationId ){
+		loadProject( arguments.projectId );
+
+		var current = getDao().findQuotationProjectId( arguments.quotationId );
+		if ( current == arguments.projectId ) {
+			return;
+		}
+		if ( Len( current ) ) {
+			Throw( type = "apirone.planning.QuotationInProject", message = "Il preventivo è già collegato a un altro progetto: scollegalo prima da quello." );
+		}
+
+		transaction {
+			getDao().linkQuotation( arguments.projectId, arguments.quotationId );
+		}
+	}
+
+	/**
+	 * Scollega un preventivo: torna nel Gantt da solo se pianificabile; i blocchi
+	 * già passati al progetto restano al progetto.
+	 */
+	public void function unlinkQuotation( required String projectId, required String quotationId ){
+		getDao().unlinkQuotation( arguments.projectId, arguments.quotationId );
+	}
+
+	/**
+	 * Preventivi da collegare a un progetto ( qualunque stato ): almeno 2
+	 * caratteri. projectId: progetto a cui è già collegato ( vuoto: nessuno ).
+	 */
+	public Array function searchQuotations( required String str ){
+		var result = [];
+
+		if ( Len( Trim( arguments.str ) ) < 2 ) {
+			return result;
+		}
+
+		for ( var row in getDao().searchQuotations( arguments.str ) ) {
+			var quotation = quotationSummary( row );
+			quotation[ "projectId" ] = row.project_id ?: "";
+			result.append( quotation );
+		}
+
+		return result;
+	}
+
+	/**
+	 * Revisione: la nuova versione resta nel progetto della precedente.
+	 */
+	public void function copyProjectLink( required String fromQuotationId, required String toQuotationId ){
+		getDao().copyProjectLink( arguments.fromQuotationId, arguments.toQuotationId );
+	}
+
+	/* ======================= Ore stimate ( preventivi e progetti ) ======================= */
+
+	/**
+	 * hours / budgets: struct tipo -> valore; ownerId è un preventivo o, con
+	 * project, un progetto.
+	 */
+	private void function saveWorkHours( required String ownerId, required Struct hours, required Struct budgets, required Boolean project ){
 		var validIds = workTypeIds();
 
 		for ( var workTypeId in arguments.hours ) {
@@ -195,7 +456,78 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			var value  = IsNumeric( arguments.hours[ workTypeId ] ) ? Max( arguments.hours[ workTypeId ], 0 ) : 0;
 			var budget = arguments.budgets[ workTypeId ] ?: "";
 			budget = IsNumeric( budget ) && budget >= 0 ? budget : "";
-			getDao().saveQuotationWorkHours( arguments.quotationId, UCase( workTypeId ), value, budget );
+			if ( arguments.project ) {
+				getDao().saveProjectWorkHours( arguments.ownerId, UCase( workTypeId ), value, budget );
+			} else {
+				getDao().saveQuotationWorkHours( arguments.ownerId, UCase( workTypeId ), value, budget );
+			}
+		}
+	}
+
+	/**
+	 * Ore di un tipo di attività di una voce del Gantt: stima, budget, ore
+	 * pianificate sulla stima e ore extra ( a parte ).
+	 */
+	private Struct function hoursEntry( required Struct row ){
+		return {
+			"estimated" = Val( arguments.row.estimated ),
+			"budget"    = IsNumeric( arguments.row.budget ?: "" ) ? Val( arguments.row.budget ) : "",
+			"planned"   = Val( arguments.row.planned ),
+			"extra"     = Val( arguments.row.extra )
+		};
+	}
+
+	private Struct function quotationSummary( required Struct row ){
+		return {
+			"id"        = arguments.row.quotation_id,
+			"label"     = quotationLabel( arguments.row.quotation_number, arguments.row.version_number ?: "" ),
+			"url"       = "/manager/quotations/" & arguments.row.quotation_id,
+			"number"    = arguments.row.quotation_number,
+			"version"   = arguments.row.version_number ?: "",
+			"name"      = arguments.row.name ?: "",
+			"rifLibero" = arguments.row.rif_libero ?: "",
+			"customer"  = arguments.row.customer ?: "",
+			"statusId"  = arguments.row.status_id ?: ""
+		};
+	}
+
+	private String function quotationLabel( required any number, any version = "" ){
+		return "n. " & arguments.number & ( Len( arguments.version ) ? "/" & arguments.version : "" );
+	}
+
+	/**
+	 * Colonna del proprietario di un blocco ( argomenti di PlanningDAO.insertBlock ):
+	 * l'id di una voce del Gantt è un progetto o un preventivo. Un preventivo
+	 * collegato a un progetto non si pianifica più da solo.
+	 */
+	private Struct function blockOwner( required String itemId ){
+		if ( isProject( arguments.itemId ) ) {
+			return { "projectId" = arguments.itemId };
+		}
+		if ( Len( getDao().findQuotationProjectId( arguments.itemId ) ) ) {
+			Throw( type = "apirone.planning.QuotationInProject", message = "Il preventivo è collegato a un progetto: pianificalo sul progetto, ricarica la pagina." );
+		}
+		return { "quotationId" = arguments.itemId };
+	}
+
+	private Boolean function isProject( required String id ){
+		return IsValid( "guid", arguments.id ) || IsValid( "uuid", arguments.id )
+			? getDao().findProjects( arguments.id ).recordCount > 0
+			: false;
+	}
+
+	private void function loadProject( required String projectId ){
+		if ( !isProject( arguments.projectId ) ) {
+			Throw( type = "apirone.planning.ProjectNotFound", message = "Progetto non trovato: forse è stato eliminato, ricarica la pagina." );
+		}
+	}
+
+	private void function checkProject( required String name, String rifLibero = "" ){
+		if ( !Len( Trim( arguments.name ) ) ) {
+			Throw( type = "apirone.planning.InvalidProject", message = "Il nome del progetto è obbligatorio." );
+		}
+		if ( Len( Trim( arguments.name ) ) > 255 || Len( Trim( arguments.rifLibero ) ) > 255 ) {
+			Throw( type = "apirone.planning.InvalidProject", message = "Nome e rif. libero del progetto: massimo 255 caratteri." );
 		}
 	}
 
@@ -246,7 +578,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	 * Costi dei progetti rispetto al budget, per progetto e attività. Il costo
 	 * viene dalle ore pianificate nel Gantt × tariffa della persona in vigore quel
 	 * giorno ( non c'è un consuntivo ): "done" sono i giorni fino a oggi.
-	 * [ { ...plannableQuotations, activities: [ { workTypeId, estimatedHours,
+	 * [ { ...plannableItems, activities: [ { workTypeId, estimatedHours,
 	 * budget, hours, doneHours, cost, doneCost, missingRateHours } ], totals } ]
 	 * Solo i progetti con ore stimate, budget o ore pianificate.
 	 */
@@ -259,7 +591,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		var types  = workTypes();
 		var result = [];
 
-		for ( var quotation in plannableQuotations() ) {
+		for ( var quotation in plannableItems() ) {
 			var activities = [];
 			var totals     = {
 				"estimatedHours" = 0, "budget" = "", "hours" = 0, "doneHours" = 0,
@@ -316,14 +648,14 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	/**
 	 * Dati del Gantt per un intervallo di date:
 	 * - people: persone con un tipo di lavoro ( listPeople );
-	 * - quotations: preventivi pianificabili ( plannableQuotations ); i progetti
-	 *   conclusi servono solo a dare un nome ai loro blocchi;
+	 * - quotations: voci del Gantt, preventivi e progetti ( plannableItems ); le
+	 *   voci concluse servono solo a dare un nome ai loro blocchi;
 	 * - blocks: blocchi con almeno un giorno nell'intervallo, con tutti i giorni
 	 *   ( days: [ { day, hours } ] ), inizio, fine e totale;
 	 * - nonWorkingDays: sabati, domeniche, festivi e chiusure dell'intervallo.
 	 */
 	public Struct function ganttData( required Date fromDate, required Date toDate ){
-		var quotations = plannableQuotations();
+		var quotations = plannableItems();
 
 		var blocks      = [];
 		var blocksById  = {};
@@ -404,6 +736,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	){
 		var person = loadPerson( arguments.userId );
 		checkWorkType( person, arguments.workTypeId );
+		checkAssignable( arguments.quotationId );
 
 		if ( arguments.hours <= 0 ) {
 			Throw( type = "apirone.planning.InvalidHours", message = "Non ci sono ore da pianificare." );
@@ -424,16 +757,18 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			days = distribute( person, arguments.start, arguments.hours, false, false, 0 );
 		}
 
+		var blockArgs = blockOwner( arguments.quotationId );
+		blockArgs.append( {
+			"userId"     = arguments.userId,
+			"workTypeId" = arguments.workTypeId,
+			"startDay"   = DateFormat( arguments.start, "yyyy-mm-dd" ),
+			"note"       = arguments.note,
+			"extra"      = arguments.extra,
+			"createdBy"  = arguments.createdBy
+		} );
+
 		transaction {
-			var blockId = getDao().insertBlock(
-				quotationId = arguments.quotationId,
-				userId      = arguments.userId,
-				workTypeId  = arguments.workTypeId,
-				startDay    = DateFormat( arguments.start, "yyyy-mm-dd" ),
-				note        = arguments.note,
-				extra       = arguments.extra,
-				createdBy   = arguments.createdBy
-			);
+			var blockId = getDao().insertBlock( argumentCollection = blockArgs );
 			getDao().replaceBlockDays( blockId, days );
 		}
 
@@ -449,6 +784,10 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		var targetUserId = Len( arguments.userId ) ? arguments.userId : block.userId;
 		var person       = loadPerson( targetUserId );
 		checkWorkType( person, block.workTypeId );
+		// spostarlo su un'altra persona è un'assegnazione
+		if ( targetUserId != block.userId ) {
+			checkAssignable( block.quotationId );
+		}
 
 		var pattern    = block.days.map( function( day ){ return day.hours; } );
 		var horizon    = DateAdd( "d", variables.HORIZON_DAYS, arguments.start );
@@ -564,17 +903,19 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			}
 		}
 
+		var blockArgs = blockOwner( block.quotationId );
+		blockArgs.append( {
+			"userId"        = block.userId,
+			"workTypeId"    = block.workTypeId,
+			"useSaturday"   = block.useSaturday,
+			"forceHolidays" = block.forceHolidays,
+			"startDay"      = second[ 1 ].day,
+			"note"          = block.note,
+			"extra"         = block.extra
+		} );
+
 		transaction {
-			var newId = getDao().insertBlock(
-				quotationId   = block.quotationId,
-				userId        = block.userId,
-				workTypeId    = block.workTypeId,
-				useSaturday   = block.useSaturday,
-				forceHolidays = block.forceHolidays,
-				startDay      = second[ 1 ].day,
-				note          = block.note,
-				extra         = block.extra
-			);
+			var newId = getDao().insertBlock( argumentCollection = blockArgs );
 			getDao().replaceBlockDays( block.id, first );
 			getDao().replaceBlockDays( newId, second );
 		}
@@ -712,7 +1053,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
 		return {
 			"id"         = record.user_id[ 1 ],
-			"workTypeId" = record.work_type_id[ 1 ] ?: "",
+			"workTypeIds" = ListToArray( record.work_type_ids[ 1 ] ?: "" ),
 			"hours"      = hours,
 			"dayStart"   = Val( record.day_start_minutes[ 1 ] )
 		};
@@ -726,7 +1067,8 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
 		var block = {
 			"id"            = records.block_id[ 1 ],
-			"quotationId"   = records.quotation_id[ 1 ],
+			// voce del Gantt: il progetto o il preventivo del blocco
+			"quotationId"   = Len( records.project_id[ 1 ] ?: "" ) ? records.project_id[ 1 ] : records.quotation_id[ 1 ],
 			"userId"        = records.user_id[ 1 ],
 			"workTypeId"    = records.work_type_id[ 1 ],
 			"useSaturday"   = records.use_saturday[ 1 ] ? true : false,
@@ -755,18 +1097,34 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	}
 
 	/**
-	 * Le attività si assegnano alle persone del tipo corrispondente; "Altro" ( ALT )
-	 * a chiunque.
+	 * Le attività si assegnano alle persone che hanno quella tipologia.
 	 */
 	private void function checkWorkType( required Struct person, required String workTypeId ){
-		if ( arguments.workTypeId != "ALT" && arguments.person.workTypeId != arguments.workTypeId ) {
+		if ( !ArrayContains( arguments.person.workTypeIds, arguments.workTypeId ) ) {
 			var wanted  = arguments.workTypeId;
 			var matches = workTypes().filter( function( item ){ return item.id == wanted; } );
 			Throw(
 				type    = "apirone.planning.WrongWorkType",
-				message = "Questa attività si assegna solo a persone di tipo " & ( matches.len() ? matches[ 1 ].name : wanted ) & "."
+				message = "Questa attività si assegna solo a persone con la tipologia " & ( matches.len() ? matches[ 1 ].name : wanted ) & "."
 			);
 		}
+	}
+
+	/**
+	 * Si assegnano persone solo a preventivi / progetti "In corso": "In sospeso"
+	 * e "Da programmare" non si possono ancora quantificare, "Concluso" è chiuso.
+	 */
+	private void function checkAssignable( required String itemId ){
+		var statusId = getDao().findPlanningStatus( arguments.itemId );
+		if ( statusId == "COR" ) {
+			return;
+		}
+		var matches = variables.PLANNING_STATUSES.filter( function( item ){ return item.id == statusId; } );
+		Throw(
+			type    = "apirone.planning.NotAssignable",
+			message = "Il progetto è " & LCase( matches.len() ? matches[ 1 ].name : "non pianificabile" )
+				& ": si possono assegnare persone solo ai progetti in corso ( stato in Ore progetti )."
+		);
 	}
 
 	private Numeric function blockTotal( required Struct block ){

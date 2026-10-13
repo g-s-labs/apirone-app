@@ -2,8 +2,8 @@
 <!---
     PLANNING/GANTT.CFM
     ==================
-    Gantt della pianificazione: persone sui preventivi "Confermato da cliente" e
-    "Convertito in ordine". App Vue 2 montata su ##planning-gantt-app ( logica in
+    Gantt della pianificazione: persone sui preventivi attivi ( qualunque stato
+    tranne Perso ed Estinto ) e sui progetti. App Vue 2 montata su ##planning-gantt-app ( logica in
     app-planning-gantt.js, stile in css/planning.css ).
 
     - Viste giornaliera ( 2 settimane ), settimanale ( 6 settimane ), mensile
@@ -64,10 +64,22 @@
 
                 <div v-for="item in backlog" :key="item.quotation.id" class="pg-backlog-quotation">
                     <div class="pg-backlog-quotation-title">
-                        <i class="fas fa-file-invoice text-muted"></i>
-                        <a :href="'/manager/quotations/' + item.quotation.id" target="_blank">{{ quotationLabel( item.quotation ) }}</a>
+                        <!--- preventivo: link alla pagina; progetto: il nome ( si gestisce in Ore progetti ) --->
+                        <i class="fas text-muted" :class="item.quotation.kind === 'project' ? 'fa-folder-open' : 'fa-file-invoice'"></i>
+                        <a v-if="item.quotation.url" :href="item.quotation.url" target="_blank">{{ quotationLabel( item.quotation ) }}</a>
+                        <a v-else href="/manager/planning/projects" target="_blank" title="Progetto: si gestisce in Ore progetti">{{ quotationLabel( item.quotation ) }}</a>
                     </div>
-                    <div class="pg-backlog-customer" v-if="item.quotation.customer">{{ item.quotation.customer }}</div>
+                    <div class="pg-backlog-customer" v-if="itemSubtitle( item.quotation )">{{ itemSubtitle( item.quotation ) }}</div>
+                    <!--- priorità, data con tipo, note ( dettagli al clic ) --->
+                    <div class="pg-item-meta" v-if="item.quotation.priority || item.quotation.dueDate || item.quotation.note">
+                        <span v-if="item.quotation.priority" class="pg-priority" :class="'pg-priority-' + item.quotation.priority"
+                              :title="optionName( options.priorities, item.quotation.priority )">{{ item.quotation.priority }}</span>
+                        <span v-if="item.quotation.dueDate" class="pg-due" :class="{ tassativa: item.quotation.dateType === 'TAS' }"
+                              :title="dueTitle( item.quotation )"><i class="far fa-calendar"></i> {{ formatDay( item.quotation.dueDate ) }}</span>
+                        <a v-if="item.quotation.note" href="##" class="pg-note-link" @click.prevent="openItemInfo( item.quotation )" title="Note e dettagli">
+                            <i class="fas fa-sticky-note"></i> note
+                        </a>
+                    </div>
                     <!--- riquadri da trascinare su una persona del tipo giusto, nel giorno di inizio --->
                     <div class="pg-backlog-chips">
                         <span v-for="chip in item.chips" :key="chip.workTypeId" class="pg-chip pg-chip-draggable"
@@ -118,11 +130,31 @@
                             <div class="pg-label pg-group-label" :style="{ width: labelWidth + 'px' }">
                                 <i class="fas" :class="collapsedGroups[ group.key ] ? 'fa-caret-right' : 'fa-caret-down'"></i>
                                 <span v-if="group.color" class="pg-swatch" :style="{ backgroundColor: group.color }"></span>
-                                <i v-else class="fas fa-file-invoice text-muted"></i>
-                                <span class="pg-group-title">{{ group.title }}</span>
+                                <i v-else class="fas text-muted" :class="group.project ? 'fa-folder-open' : 'fa-file-invoice'"></i>
+                                <!--- clic sul nome del preventivo / progetto: dettagli e note ( sul resto della riga: apri / chiudi ) --->
+                                <span class="pg-group-title" :class="{ 'pg-group-title-link': group.item }"
+                                      @click="group.item && ( $event.stopPropagation(), openItemInfo( group.item ) )"
+                                      :title="group.item ? 'Dettagli e note' : ''">{{ group.title }}</span>
+                                <!--- preventivo / progetto: priorità, stato se non in corso, data; clic sull'icona: dettagli e note --->
+                                <template v-if="group.item">
+                                    <span v-if="group.item.priority" class="pg-priority" :class="'pg-priority-' + group.item.priority"
+                                          :title="optionName( options.priorities, group.item.priority )">{{ group.item.priority }}</span>
+                                    <span v-if="!group.item.assignable" class="pg-planning-status"
+                                          title="Non si possono assegnare persone: cambia lo stato in Ore progetti">{{ optionName( options.statuses, group.item.planningStatusId ) }}</span>
+                                    <span v-if="group.item.dueDate" class="pg-due" :class="{ tassativa: group.item.dateType === 'TAS' }"
+                                          :title="dueTitle( group.item )"><i class="far fa-calendar"></i> {{ formatDay( group.item.dueDate ) }}</span>
+                                    <i class="fas pg-info-icon" :class="group.item.note ? 'fa-sticky-note has-note' : 'fa-info-circle'"
+                                       @click.stop="openItemInfo( group.item )" :title="group.item.note ? 'Note e dettagli' : 'Dettagli'"></i>
+                                </template>
                                 <span class="pg-group-subtitle" v-if="group.subtitle">{{ group.subtitle }}</span>
                             </div>
-                            <div class="pg-group-fill" :style="{ width: ( days.length * colWidth ) + 'px' }"></div>
+                            <div class="pg-group-fill" :style="{ width: ( days.length * colWidth ) + 'px' }">
+                                <!--- data di consegna sulla riga del preventivo / progetto: rossa se tassativa --->
+                                <span v-if="group.item && dueIndex( group.item ) !== -1" class="pg-due-marker"
+                                      :class="{ tassativa: group.item.dateType === 'TAS' }"
+                                      :style="{ left: ( dueIndex( group.item ) * colWidth + colWidth / 2 ) + 'px' }"
+                                      :title="dueTitle( group.item )"><i class="fas fa-flag"></i></span>
+                            </div>
                         </div>
 
                         <template v-if="!collapsedGroups[ group.key ]">
@@ -243,8 +275,8 @@
                                                 <span class="pg-block-toolbar-total">{{ format( bar.block.total ) }} h</span>
                                             </div>
 
-                                            <!--- attività "Altro": di cosa si tratta --->
-                                            <div v-if="bar.block.workTypeId === 'ALT'" class="pg-block-toolbar-note">
+                                            <!--- nota del blocco: di cosa si tratta ( facoltativa ) --->
+                                            <div class="pg-block-toolbar-note">
                                                 <input type="text" class="form-control form-control-sm" maxlength="1000"
                                                        :value="bar.block.note" placeholder="Note: di cosa si tratta ( facoltativo )"
                                                        @change="setBlockNote( bar.block, $event.target.value )"
@@ -271,7 +303,8 @@
                                                         @click="toggleExtra( bar.block )" title="Ore extra: oltre la stima del progetto, costo in più">
                                                     <i class="fas fa-plus-circle"></i> Extra
                                                 </button>
-                                                <a class="btn btn-default btn-xs" :href="'/manager/quotations/' + bar.block.quotationId" target="_blank" title="Apri il preventivo">
+                                                <a class="btn btn-default btn-xs" :href="( quotationsById[ bar.block.quotationId ] || {} ).url || '/manager/planning/projects'" target="_blank"
+                                                   :title="( quotationsById[ bar.block.quotationId ] || {} ).kind === 'project' ? 'Apri Ore progetti' : 'Apri il preventivo'">
                                                     <i class="fas fa-external-link-alt"></i>
                                                 </a>
                                                 <button type="button" class="btn btn-danger btn-xs" @click="deleteSelected" title="Elimina il blocco">
@@ -312,7 +345,7 @@
                             <a href="/manager/planning/people">Disponibilità persone</a>.
                         </template>
                         <template v-else>
-                            Nessun preventivo "Confermato da cliente" o "Convertito in ordine".
+                            Nessun preventivo da pianificare ( si escludono i persi, gli estinti e i conclusi ).
                         </template>
                     </div>
 
@@ -320,6 +353,49 @@
             </div>
 
             <!--- nuova attività ( extra ): persona trascinata su un giorno --->
+            <!--- dettagli di un preventivo / progetto: pianificazione e note ( si modificano in Ore progetti ) --->
+            <div id="pg-item-modal" class="modal fade" tabindex="-1">
+                <section class="modal-dialog">
+                    <div class="modal-content" v-if="itemInfo">
+                        <header class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="fas text-muted" :class="itemInfo.kind === 'project' ? 'fa-folder-open' : 'fa-file-invoice'"></i>
+                                {{ quotationLabel( itemInfo ) }}
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </header>
+                        <div class="modal-body">
+                            <div class="text-muted mb-2" v-if="itemSubtitle( itemInfo )">{{ itemSubtitle( itemInfo ) }}</div>
+                            <dl class="row mb-2 pg-item-details">
+                                <dt class="col-4">Stato</dt>
+                                <dd class="col-8">{{ optionName( options.statuses, itemInfo.planningStatusId ) }}</dd>
+                                <dt class="col-4">Priorità</dt>
+                                <dd class="col-8">{{ optionName( options.priorities, itemInfo.priority ) || "—" }}</dd>
+                                <dt class="col-4">{{ itemInfo.kind === 'project' ? 'Data' : 'Data prevista evasione' }}</dt>
+                                <dd class="col-8">
+                                    <template v-if="itemInfo.dueDate">
+                                        {{ formatDayLong( itemInfo.dueDate ) }}
+                                        <span v-if="itemInfo.dateType" class="pg-due ms-1" :class="{ tassativa: itemInfo.dateType === 'TAS' }">{{ optionName( options.dateTypes, itemInfo.dateType ) }}</span>
+                                    </template>
+                                    <template v-else>—</template>
+                                </dd>
+                            </dl>
+                            <label class="form-label fw-bold mb-1">Note</label>
+                            <div class="pg-item-note" v-if="itemInfo.note">{{ itemInfo.note }}</div>
+                            <div class="text-muted small" v-else>Nessuna nota.</div>
+                        </div>
+                        <footer class="modal-footer">
+                            <a v-if="itemInfo.url" :href="itemInfo.url" target="_blank" class="btn btn-default">
+                                <i class="fas fa-external-link-alt"></i> Apri il preventivo
+                            </a>
+                            <a href="/manager/planning/projects" target="_blank" class="btn btn-primary">
+                                <i class="fas fa-pen"></i> Modifica in Ore progetti
+                            </a>
+                        </footer>
+                    </div>
+                </section>
+            </div>
+
             <div id="pg-extra-modal" class="modal fade" tabindex="-1">
                 <section class="modal-dialog">
                     <div class="modal-content">

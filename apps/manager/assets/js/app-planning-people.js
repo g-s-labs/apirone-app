@@ -47,7 +47,7 @@ AP.planningPeople = ( function() {
                 }() ),
                 people: [],
                 filters: { str: "", workTypeId: "" },
-                newPerson: { open: false, name: "", workTypeId: "MON" },
+                newPerson: { open: false, name: "", workTypeIds: [ "MON" ] },
 
                 year: new Date().getFullYear(),
                 holidays: [],
@@ -66,8 +66,8 @@ AP.planningPeople = ( function() {
 
                     return this.people.filter( function( person ) {
                         if ( str && person.name.toLowerCase().indexOf( str ) === -1 ) return false;
-                        if ( typeId === "_none" ) return !person.workTypeId;
-                        if ( typeId ) return person.workTypeId === typeId;
+                        if ( typeId === "_none" ) return !person.workTypeIds.length;
+                        if ( typeId ) return person.workTypeIds.indexOf( typeId ) !== -1;
                         return true;
                     } );
                 },
@@ -92,9 +92,24 @@ AP.planningPeople = ( function() {
                     return Math.round( total * 100 ) / 100;
                 },
 
-                // Tipo assegnato a chi non ha ancora ore: si parte da 8h lun-ven
+                // si pianifica chi ha almeno una tipologia
+                planned: function( person ) {
+                    return person.workTypeIds.length > 0;
+                },
+
+                // attiva / toglie una tipologia dall'elenco ( persona o nuova persona )
+                toggleType: function( ids, typeId ) {
+                    const index = ids.indexOf( typeId );
+                    if ( index === -1 ) ids.push( typeId ); else ids.splice( index, 1 );
+                },
+
+                chipStyle: function( type, ids ) {
+                    return ids.indexOf( type.id ) !== -1 ? { backgroundColor: type.color, borderColor: type.color } : {};
+                },
+
+                // Tipologie assegnate a chi non ha ancora ore: si parte da 8h lun-ven
                 changeType: function( person ) {
-                    if ( person.workTypeId && this.weekTotal( person ) === 0 ) {
+                    if ( this.planned( person ) && this.weekTotal( person ) === 0 ) {
                         person.hours = this.defaultHours.slice();
                     }
                     this.save( person );
@@ -109,7 +124,7 @@ AP.planningPeople = ( function() {
                         url: BASE + "/people/" + person.id,
                         loading: false, // salvataggio di una riga: niente spinner a tutta pagina
                         data: JSON.stringify( {
-                            workTypeId: person.workTypeId,
+                            workTypeIds: person.workTypeIds,
                             hours: person.hours.map( function( value ) { return Number( value ) || 0; } ),
                             dayStart: person.dayStart,
                         } ),
@@ -124,7 +139,7 @@ AP.planningPeople = ( function() {
 
                 openNewPerson: function() {
                     this.tab = "people";
-                    this.newPerson = { open: true, name: "", workTypeId: "MON" };
+                    this.newPerson = { open: true, name: "", workTypeIds: [ "MON" ] };
                     this.$nextTick( () => { this.$refs.newPersonName && this.$refs.newPersonName.focus(); } );
                 },
 
@@ -134,7 +149,7 @@ AP.planningPeople = ( function() {
                     const xhr = await ajax( {
                         method: "POST",
                         url: BASE + "/people",
-                        data: JSON.stringify( { name: this.newPerson.name.trim(), workTypeId: this.newPerson.workTypeId } ),
+                        data: JSON.stringify( { name: this.newPerson.name.trim(), workTypeIds: this.newPerson.workTypeIds } ),
                     } );
                     if ( !xhr ) return;
 

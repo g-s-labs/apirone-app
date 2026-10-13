@@ -16,7 +16,7 @@ component extends="com.apirone.core.controller.AbsController" {
 		var json   = DeserializeJSON( GetHTTPRequestData().content );
 
 		try {
-			super.service( "Planning" ).savePerson( rc.id, json.workTypeId ?: "", json.hours ?: [], json.dayStart ?: "08:00" );
+			super.service( "Planning" ).savePerson( rc.id, workTypeIdsOf( json ), json.hours ?: [], json.dayStart ?: "08:00" );
 			result.setData( { "message" = "Disponibilità salvata." } );
 		} catch ( any e ) {
 			// errori di validazione del service ( apirone.planning.* ): messaggio all'utente
@@ -35,7 +35,7 @@ component extends="com.apirone.core.controller.AbsController" {
 		var json   = DeserializeJSON( GetHTTPRequestData().content );
 
 		try {
-			var id = super.service( "Planning" ).createPerson( json.name ?: "", json.workTypeId ?: "" );
+			var id = super.service( "Planning" ).createPerson( json.name ?: "", workTypeIdsOf( json ) );
 			result.setData( { "id" = id, "message" = "Persona creata." } );
 		} catch ( any e ) {
 			// errori di validazione del service ( apirone.planning.* ): messaggio all'utente
@@ -237,34 +237,94 @@ component extends="com.apirone.core.controller.AbsController" {
 		event.setValue( "result", result );
 	}
 
-	/* ======================= Progetti ( ore dei preventivi ) ======================= */
+	/* ======================= Progetti ( ore delle voci del Gantt ) ======================= */
 
 	/**
-	 * Preventivi "Confermato da cliente" / "Convertito in ordine" con ore stimate
-	 * e pianificate per tipo e stato del progetto ( concluso ).
+	 * Voci del Gantt pianificabili: preventivi attivi non persi né estinti e
+	 * non collegati a un progetto, e progetti, con ore
+	 * stimate e pianificate per tipo e stato ( concluso ).
 	 */
 	function listProjects( event, rc, prc ){
 		var result = super.getResult();
-		var projects = super.service( "Planning" ).plannableQuotations().filter( function( quotation ){
-			return quotation.plannable;
+		var projects = super.service( "Planning" ).plannableItems().filter( function( item ){
+			return item.plannable;
 		} );
 		result.setData( projects );
 		event.setValue( "result", result );
 	}
 
+	/**
+	 * Ore stimate, budget e pianificazione ( stato, data con tipo, priorità,
+	 * note ) di una voce ( preventivo o progetto ).
+	 */
 	function saveProject( event, rc, prc ){
+		var json = DeserializeJSON( GetHTTPRequestData().content );
+
+		blockAction( event, function( service ){
+			service.saveProject(
+				quotationId = rc.id,
+				hours       = json.hours ?: {},
+				budgets     = json.budgets ?: {},
+				planning    = IsStruct( json.planning ?: "" ) ? json.planning : {},
+				userId      = session.user.getId()
+			);
+			return { "message" = "Progetto salvato." };
+		} );
+	}
+
+	/**
+	 * Nuovo progetto ( nome + rif. libero ): compare nel Gantt come un preventivo.
+	 */
+	function createProject( event, rc, prc ){
+		var json = DeserializeJSON( GetHTTPRequestData().content );
+
+		blockAction( event, function( service ){
+			var id = service.createProject( json.name ?: "", json.rifLibero ?: "", session.user.getId() );
+			return { "id" = id, "message" = "Progetto creato." };
+		} );
+	}
+
+	function updateProject( event, rc, prc ){
+		var json = DeserializeJSON( GetHTTPRequestData().content );
+
+		blockAction( event, function( service ){
+			service.updateProject( rc.id, json.name ?: "", json.rifLibero ?: "" );
+			return { "message" = "Progetto salvato." };
+		} );
+	}
+
+	function deleteProject( event, rc, prc ){
+		blockAction( event, function( service ){
+			service.deleteProject( rc.id );
+			return { "message" = "Progetto eliminato." };
+		} );
+	}
+
+	/**
+	 * Collega un preventivo al progetto: i suoi blocchi passano al progetto.
+	 */
+	function linkQuotation( event, rc, prc ){
+		var json = DeserializeJSON( GetHTTPRequestData().content );
+
+		blockAction( event, function( service ){
+			service.linkQuotation( rc.id, json.quotationId ?: "" );
+			return { "message" = "Preventivo collegato al progetto." };
+		} );
+	}
+
+	function unlinkQuotation( event, rc, prc ){
+		blockAction( event, function( service ){
+			service.unlinkQuotation( rc.id, rc.quotationId );
+			return { "message" = "Preventivo scollegato dal progetto." };
+		} );
+	}
+
+	/**
+	 * Preventivi da collegare a un progetto ( str: numero, nome, rif. libero o cliente ).
+	 */
+	function searchQuotations( event, rc, prc ){
 		var result = super.getResult();
-		var json   = DeserializeJSON( GetHTTPRequestData().content );
-
-		super.service( "Planning" ).saveProject(
-			quotationId = rc.id,
-			hours       = json.hours ?: {},
-			budgets     = json.budgets ?: {},
-			completed   = IsBoolean( json.completed ?: "" ) && json.completed,
-			userId      = session.user.getId()
-		);
-
-		result.setData( { "message" = "Progetto salvato." } );
+		result.setData( super.service( "Planning" ).searchQuotations( rc.str ?: "" ) );
 		event.setValue( "result", result );
 	}
 
@@ -273,8 +333,8 @@ component extends="com.apirone.core.controller.AbsController" {
 	*/
 
 	/**
-	 * Esegue un'operazione sui blocchi: gli errori di validazione del service
-	 * ( apirone.planning.* ) tornano all'utente come messaggio.
+	 * Esegue un'operazione del service ( blocchi, progetti ): gli errori di
+	 * validazione ( apirone.planning.* ) tornano all'utente come messaggio.
 	 */
 	private void function blockAction( required any event, required any action ){
 		var result = super.getResult();
@@ -288,6 +348,14 @@ component extends="com.apirone.core.controller.AbsController" {
 		}
 
 		arguments.event.setValue( "result", result );
+	}
+
+	/**
+	 * Tipologie della persona dal JSON ( workTypeIds: array di codici ).
+	 */
+	private Array function workTypeIdsOf( required Struct json ){
+		var ids = arguments.json.workTypeIds ?: [];
+		return IsArray( ids ) ? ids.map( function( id ){ return UCase( Trim( id ) ); } ) : [];
 	}
 
 	private Date function parseDay( required String day ){

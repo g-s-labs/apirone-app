@@ -1,8 +1,9 @@
 AP.namespace( "planningGantt" );
 
 /**
- * Gantt della pianificazione: persone sui preventivi "Confermato da cliente" e
- * "Convertito in ordine".
+ * Gantt della pianificazione: persone sui preventivi attivi ( qualunque stato
+ * tranne Perso ed Estinto ) e sui progetti. Si assegnano persone solo alle voci
+ * "In corso" ( assignable ); ogni persona riceve le attività delle sue tipologie.
  *
  * Un blocco è una persona su un'attività di un preventivo, con le ore giorno
  * per giorno ( planning_blocks / planning_block_days ): la distribuzione delle
@@ -153,6 +154,7 @@ AP.planningGantt = ( function() {
 
             data: {
                 workTypes: AP.page.workTypes || [],
+                options: AP.page.planningOptions || { statuses: [], dateTypes: [], priorities: [] },
                 scale: prefs.scale,
                 groupBy: prefs.groupBy,
                 anchor: new Date(),
@@ -178,6 +180,9 @@ AP.planningGantt = ( function() {
 
                 // nuova attività ( extra ) creata trascinando una persona su un giorno
                 extraForm: { person: null, day: "", dayLabel: "", quotationId: "", workTypeId: "", hours: 8, startTime: "", note: "", extra: true },
+
+                // preventivo / progetto aperto nella modale dei dettagli ( stato, priorità, data, note )
+                itemInfo: null,
             },
 
             computed: {
@@ -292,7 +297,8 @@ AP.planningGantt = ( function() {
                 backlog: function() {
                     const result = [];
                     this.quotations.forEach( ( quotation ) => {
-                        if ( !quotation.plannable || quotation.completed ) return;
+                        // solo le voci "In corso": a sospese e da programmare non si assegnano persone
+                        if ( !quotation.plannable || !quotation.assignable ) return;
                         const chips = [];
                         this.workTypes.forEach( function( type ) {
                             const hours = quotation.hours[ type.id ];
@@ -413,30 +419,34 @@ AP.planningGantt = ( function() {
 
                 /* ---------- righe ---------- */
 
-                // per Persone: un gruppo per tipo di lavoro, una riga per persona
+                // per Persone: un solo gruppo, una riga per persona con le sue tipologie
+                // ( una persona può averne più d'una: un gruppo per tipologia la ripeterebbe )
                 peopleGroups: function() {
-                    return this.workTypes.map( ( type ) => {
-                        const rows = this.people
-                            .filter( function( person ) { return person.workTypeId === type.id; } )
-                            .map( ( person ) => {
-                                const blocks = this.blocks.filter( function( block ) { return block.userId === person.id; } );
-                                return this.buildRow( "p-" + person.id, person.name, "", blocks, person, null );
-                            } );
-                        return {
-                            key: "type-" + type.id,
-                            title: type.name,
-                            subtitle: rows.length + ( rows.length === 1 ? " persona" : " persone" ),
-                            color: type.color,
-                            rows: rows,
-                            emptyText: "Nessuna persona di questo tipo",
-                        };
-                    } ).filter( function( group ) { return group.rows.length; } );
+                    const rows = this.people.map( ( person ) => {
+                        const blocks = this.blocks.filter( function( block ) { return block.userId === person.id; } );
+                        const types = person.workTypeIds.map( ( id ) => this.workType( id ).name ).join( ", " );
+                        return this.buildRow( "p-" + person.id, person.name, types, blocks, person, null );
+                    } );
+                    return rows.length ? [ {
+                        key: "people",
+                        title: "Persone",
+                        subtitle: rows.length + ( rows.length === 1 ? " persona" : " persone" ),
+                        color: "#868e96",
+                        rows: rows,
+                        emptyText: "Nessuna persona da pianificare",
+                    } ] : [];
                 },
 
                 // per Preventivi: un gruppo per preventivo, una riga per tipo di
                 // attività; i progetti conclusi non si vedono più
                 quotationGroups: function() {
-                    return this.quotations.filter( function( quotation ) { return !quotation.completed; } ).map( ( quotation ) => {
+                    // le voci in corso e quelle che hanno già blocchi ( anche se sospese ): le
+                    // altre da programmare / sospese restano in Ore progetti
+                    const withBlocks = {};
+                    this.blocks.forEach( function( block ) { withBlocks[ block.quotationId ] = true; } );
+                    return this.quotations.filter( function( quotation ) {
+                        return !quotation.completed && ( quotation.assignable || withBlocks[ quotation.id ] );
+                    } ).map( ( quotation ) => {
                         const rows = [];
                         this.workTypes.forEach( ( type ) => {
                             const hours = quotation.hours[ type.id ];
@@ -455,7 +465,10 @@ AP.planningGantt = ( function() {
                         return {
                             key: "quotation-" + quotation.id,
                             title: this.quotationLabel( quotation ),
-                            subtitle: quotation.customer || quotation.name,
+                            subtitle: this.itemSubtitle( quotation ),
+                            project: quotation.kind === "project",
+                            // la voce: priorità, stato, data e note nell'intestazione del gruppo
+                            item: quotation,
                             // i colori sono dei tipi di attività: il gruppo del preventivo resta neutro
                             color: "",
                             rows: rows,
@@ -610,6 +623,8 @@ AP.planningGantt = ( function() {
                     if ( this.groupBy === "people" ) {
                         const quotation = this.quotationsById[ block.quotationId ];
                         if ( !quotation ) return "";
+                        // progetto: il nome; preventivo: il numero ( "n. " solo se c'è spazio )
+                        if ( quotation.kind === "project" ) return quotation.label;
                         const number = quotation.number + ( quotation.version ? "/" + quotation.version : "" );
                         return compact ? number : "n. " + number;
                     }
@@ -624,7 +639,7 @@ AP.planningGantt = ( function() {
                     const quotation = this.quotationsById[ block.quotationId ];
                     if ( !quotation ) return "";
                     if ( this.groupBy === "people" ) {
-                        return quotation.customer || quotation.name;
+                        return this.itemSubtitle( quotation );
                     }
                     return this.quotationLabel( quotation ) + ( quotation.customer ? " · " + quotation.customer : "" );
                 },
@@ -642,7 +657,7 @@ AP.planningGantt = ( function() {
                     const quotation = this.quotationsById[ block.quotationId ];
                     const person = this.peopleById[ block.userId ];
                     const lines = [
-                        ( quotation ? this.quotationLabel( quotation ) + " " + quotation.name : "" ),
+                        ( quotation ? [ this.quotationLabel( quotation ), quotation.kind === "project" ? quotation.rifLibero : quotation.name ].filter( Boolean ).join( " " ) : "" ),
                         this.workType( block.workTypeId ).activity + ( person ? " – " + person.name : "" ),
                         this.format( block.total ) + " h, dal " + this.formatDay( block.start ) + " " + this.blockStart( block )
                             + " al " + this.formatDay( block.end ) + " " + this.blockEnd( block ),
@@ -861,9 +876,9 @@ AP.planningGantt = ( function() {
                     this.dropTarget = null;
                 },
 
-                // persone del tipo dell'attività; "Altro" va bene per chiunque
+                // persone che hanno la tipologia dell'attività
                 canAssign: function( person, workTypeId ) {
-                    return workTypeId === "ALT" || person.workTypeId === workTypeId;
+                    return person.workTypeIds.indexOf( workTypeId ) !== -1;
                 },
 
                 canDropOn: function( row ) {
@@ -889,7 +904,7 @@ AP.planningGantt = ( function() {
                 // progetti aperti: pianificabili e non conclusi, dal più recente
                 openProjects: function() {
                     return this.quotations
-                        .filter( function( quotation ) { return quotation.plannable && !quotation.completed; } )
+                        .filter( function( quotation ) { return quotation.plannable && quotation.assignable; } )
                         .slice()
                         .sort( function( a, b ) {
                             return ( Number( b.number ) - Number( a.number ) ) || ( Number( b.version ) - Number( a.version ) );
@@ -900,9 +915,10 @@ AP.planningGantt = ( function() {
                     return [ this.quotationLabel( quotation ), quotation.customer, quotation.rifLibero ].filter( Boolean ).join( " · " );
                 },
 
-                // attività possibili per la persona: il suo tipo e "Altro"
+                // attività possibili per la persona: le sue tipologie
                 personActivities: function( person ) {
-                    return this.workTypes.filter( function( type ) { return type.id === person.workTypeId || type.id === "ALT"; } );
+                    if ( !person ) return [];
+                    return this.workTypes.filter( function( type ) { return person.workTypeIds.indexOf( type.id ) !== -1; } );
                 },
 
                 openExtraModal: function( person, dayKey ) {
@@ -916,7 +932,7 @@ AP.planningGantt = ( function() {
                         day: dayKey,
                         dayLabel: this.formatDayLong( dayKey ) + ( day && day.nonWorking ? " ( " + day.nonWorking.name.toLowerCase() + " )" : "" ),
                         quotationId: "",
-                        workTypeId: person.workTypeId || "ALT",
+                        workTypeId: person.workTypeIds[ 0 ] || "",
                         hours: hours,
                         startTime: "",
                         note: "",
@@ -1147,8 +1163,46 @@ AP.planningGantt = ( function() {
                     return this.workTypes.find( function( type ) { return type.id === id; } ) || { name: id, activity: id, color: "#868e96" };
                 },
 
+                /* ---------- pianificazione della voce ( stato, priorità, data, note ) ---------- */
+
+                openItemInfo: function( quotation ) {
+                    this.itemInfo = quotation;
+                    NM.util.openModal( $( "#pg-item-modal" ) );
+                },
+
+                // nome di un valore delle tendine di pianificazione ( vuoto se non impostato )
+                optionName: function( list, id ) {
+                    const option = ( list || [] ).find( function( item ) { return item.id === id; } );
+                    return option ? option.name : "";
+                },
+
+                dueTitle: function( quotation ) {
+                    const type = this.optionName( this.options.dateTypes, quotation.dateType );
+                    // preventivo: la data è quella prevista di evasione
+                    const label = quotation.kind === "project" ? "Data" : "Evasione prevista";
+                    return label + ( type ? " ( " + type.toLowerCase() + " )" : "" ) + ": " + this.formatDayLong( quotation.dueDate );
+                },
+
+                // colonna della data di consegna nell'intervallo visibile ( -1 se fuori )
+                dueIndex: function( quotation ) {
+                    if ( !quotation.dueDate ) return -1;
+                    const index = this.dayIndex[ quotation.dueDate ];
+                    return index === undefined ? -1 : index;
+                },
+
+                // "n. 123/1" per i preventivi, il nome per i progetti ( dal server )
                 quotationLabel: function( quotation ) {
-                    return "n. " + quotation.number + ( quotation.version ? "/" + quotation.version : "" );
+                    return quotation.label || ( "n. " + quotation.number + ( quotation.version ? "/" + quotation.version : "" ) );
+                },
+
+                // sotto il titolo di una voce: cliente ( o nome ) del preventivo; per un
+                // progetto il rif. libero e i preventivi collegati
+                itemSubtitle: function( quotation ) {
+                    if ( quotation.kind === "project" ) {
+                        const linked = ( quotation.quotations || [] ).map( function( linkedQuotation ) { return linkedQuotation.label; } );
+                        return [ quotation.rifLibero ].concat( linked ).filter( Boolean ).join( " · " );
+                    }
+                    return quotation.customer || quotation.name;
                 },
 
                 format: function( value ) {

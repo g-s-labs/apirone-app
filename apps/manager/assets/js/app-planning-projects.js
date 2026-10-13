@@ -1,11 +1,16 @@
 AP.namespace( "planningProjects" );
 
 /**
- * Ore progetti per la pianificazione ( Gantt ): per ogni preventivo
- * "Confermato da cliente" / "Convertito in ordine" le ore stimate per tipo di
- * attività e lo stato del progetto. Ogni modifica di una riga si salva subito;
- * un progetto concluso esce dall'elenco ( salvo "Mostra i progetti conclusi" )
- * e dal Gantt.
+ * Ore progetti per la pianificazione ( Gantt ): per ogni voce del Gantt le ore
+ * stimate per tipo di attività e lo stato. Le voci sono i preventivi attivi in
+ * qualunque stato tranne Perso ed Estinto e i progetti ( kind
+ * "project": nome + rif. libero, con zero o più preventivi collegati; un
+ * preventivo collegato non compare da solo, è nel Gantt tramite il progetto ).
+ * Per ogni voce anche la pianificazione: stato ( In corso / Concluso / In
+ * sospeso / Da programmare: si assegnano persone solo In corso ), priorità,
+ * data con tipo ( richiesta / tassativa ) e note, visibili nel Gantt. Ogni
+ * modifica di una riga si salva subito; una voce conclusa esce dall'elenco
+ * ( salvo filtro di stato ) e dal Gantt.
  */
 AP.planningProjects = ( function() {
 
@@ -19,20 +24,28 @@ AP.planningProjects = ( function() {
 
             data: {
                 workTypes: AP.page.workTypes || [],
+                options: AP.page.planningOptions || { statuses: [], dateTypes: [], priorities: [] },
                 projects: [],
                 loading: false,
-                filters: { str: "", showCompleted: false },
+                // statusId: vuoto = tutti tranne i conclusi, "_all" = tutti
+                filters: { str: "", statusId: "" },
+                newProject: { open: false, name: "", rifLibero: "", saving: false },
             },
 
             computed: {
                 filteredProjects: function() {
                     const str = this.filters.str.trim().toLowerCase();
-                    const showCompleted = this.filters.showCompleted;
+                    const statusId = this.filters.statusId;
 
                     return this.projects.filter( function( project ) {
-                        if ( project.completed && !showCompleted ) return false;
+                        const projectStatus = project.planning.statusId;
+                        if ( statusId === "" && projectStatus === "CLS" ) return false;
+                        if ( statusId && statusId !== "_all" && projectStatus !== statusId ) return false;
                         if ( !str ) return true;
-                        const text = [ project.number, project.name, project.customer ].join( " " ).toLowerCase();
+                        const linked = ( project.quotations || [] ).map( function( quotation ) {
+                            return [ quotation.label, quotation.name, quotation.customer ].join( " " );
+                        } );
+                        const text = [ project.label, project.name, project.rifLibero, project.customer ].concat( linked ).join( " " ).toLowerCase();
                         return text.indexOf( str ) !== -1;
                     } );
                 },
@@ -51,10 +64,13 @@ AP.planningProjects = ( function() {
                         callback: {
                             done: ( xhr ) => {
                                 this.loading = false;
-                                // numero decrescente ( i più recenti in alto ), poi versione decrescente
-                                const projects = ( xhr.data || [] ).slice().sort( function( a, b ) {
+                                // prima i progetti ( dal più recente, come arrivano ), poi i preventivi
+                                // per numero decrescente ( i più recenti in alto ) e versione decrescente
+                                const items = xhr.data || [];
+                                const quotations = items.filter( function( item ) { return item.kind !== "project"; } ).sort( function( a, b ) {
                                     return ( Number( b.number ) - Number( a.number ) ) || ( Number( b.version ) - Number( a.version ) );
                                 } );
+                                const projects = items.filter( function( item ) { return item.kind === "project"; } ).concat( quotations );
                                 this.projects = projects.map( ( project ) => {
                                     // form: ore stimate modificabili, una per tipo; budgets: euro, vuoto = nessun budget
                                     const form = {};
@@ -64,7 +80,24 @@ AP.planningProjects = ( function() {
                                         form[ type.id ] = hours ? hours.estimated : 0;
                                         budgets[ type.id ] = hours && hours.budget !== "" ? hours.budget : "";
                                     } );
-                                    return Object.assign( project, { form: form, budgets: budgets, saving: false, saved: false } );
+                                    return Object.assign( project, {
+                                        form: form,
+                                        budgets: budgets,
+                                        saving: false,
+                                        saved: false,
+                                        // solo progetti: modifica di nome / rif. libero e ricerca dei preventivi da collegare
+                                        quotations: project.quotations || [],
+                                        planning: {
+                                            statusId: project.planningStatusId || "DAP",
+                                            dueDate: project.dueDate || "",
+                                            dateType: project.dateType || "",
+                                            priority: project.priority || "",
+                                            note: project.note || "",
+                                        },
+                                        editing: false,
+                                        edit: { name: project.name, rifLibero: project.rifLibero },
+                                        search: { str: "", results: [], empty: false, timer: null },
+                                    } );
                                 } );
                             },
                         },
@@ -88,7 +121,7 @@ AP.planningProjects = ( function() {
                             method: "POST",
                             url: BASE + "/projects/" + project.id,
                             loading: false, // salvataggio di una riga: niente spinner a tutta pagina
-                            data: JSON.stringify( { hours: hours, budgets: budgets, completed: project.completed } ),
+                            data: JSON.stringify( { hours: hours, budgets: budgets, planning: project.planning } ),
                             callback: {
                                 done: function( xhr ) {
                                     project.saving = false;
@@ -106,15 +139,142 @@ AP.planningProjects = ( function() {
                     } );
                 },
 
-                toggleCompleted: async function( project ) {
+                // cambio di stato: si salva e si spiega cosa cambia nel Gantt
+                changeStatus: async function( project ) {
                     const saved = await this.save( project );
-                    if ( !saved ) {
-                        project.completed = !project.completed;
+                    if ( !saved ) return;
+                    const label = project.kind === "project" ? project.name : project.label;
+                    const messages = {
+                        COR: "è in corso: nel Gantt si possono assegnare le persone.",
+                        CLS: "è concluso: non compare più nel Gantt.",
+                        SOS: "è in sospeso: nel Gantt non si possono assegnare persone.",
+                        DAP: "è da programmare: nel Gantt non si possono assegnare persone.",
+                    };
+                    AP.widget.notify( "success", label + " " + ( messages[ project.planning.statusId ] || "salvato." ) );
+                },
+
+                /* ---------- progetti ---------- */
+
+                openNewProject: function() {
+                    this.newProject = { open: true, name: "", rifLibero: "", saving: false };
+                    this.$nextTick( () => { if ( this.$refs.newProjectName ) this.$refs.newProjectName.focus(); } );
+                },
+
+                createProject: function() {
+                    if ( !this.newProject.name.trim() ) return;
+                    this.newProject.saving = true;
+                    this.call( "POST", BASE + "/projects", { name: this.newProject.name, rifLibero: this.newProject.rifLibero }, () => {
+                        AP.widget.notify( "success", "Progetto creato: inserisci le ore e collega i preventivi." );
+                        this.newProject.open = false;
+                        this.load();
+                    }, () => { this.newProject.saving = false; } );
+                },
+
+                startEdit: function( project ) {
+                    project.edit = { name: project.name, rifLibero: project.rifLibero };
+                    project.editing = true;
+                },
+
+                saveDetails: function( project ) {
+                    if ( !project.edit.name.trim() ) return;
+                    this.call( "POST", BASE + "/projects/" + project.id + "/details", project.edit, () => {
+                        project.name = project.edit.name.trim();
+                        project.label = project.name;
+                        project.rifLibero = project.edit.rifLibero.trim();
+                        project.editing = false;
+                    } );
+                },
+
+                deleteProject: function( project ) {
+                    bootbox.confirm( {
+                        title: "Elimina progetto",
+                        message: "Eliminare il progetto \"" + project.name + "\"? Le sue ore stimate si perdono e i preventivi collegati"
+                            + " tornano nel Gantt da soli. Un progetto con blocchi pianificati non si può eliminare.",
+                        buttons: {
+                            confirm: { label: "Elimina", className: "btn-danger" },
+                            cancel: { label: "Annulla", className: "btn-default" },
+                        },
+                        callback: ( confirmed ) => {
+                            if ( !confirmed ) return;
+                            this.call( "DELETE", BASE + "/projects/" + project.id, null, () => {
+                                AP.widget.notify( "success", "Progetto eliminato." );
+                                this.load();
+                            } );
+                        },
+                    } );
+                },
+
+                // ricerca con un attimo di attesa: non una richiesta per ogni tasto
+                searchQuotations: function( project ) {
+                    clearTimeout( project.search.timer );
+                    const str = project.search.str.trim();
+                    if ( str.length < 2 ) {
+                        project.search.results = [];
+                        project.search.empty = false;
                         return;
                     }
-                    if ( project.completed ) {
-                        AP.widget.notify( "success", "Progetto n. " + project.number + " concluso: non compare più nel Gantt." );
-                    }
+                    project.search.timer = setTimeout( () => {
+                        NM.util.ajax( {
+                            method: "GET",
+                            url: BASE + "/quotations?str=" + encodeURIComponent( str ),
+                            callback: {
+                                done: function( xhr ) {
+                                    // risposta di una ricerca superata da una più recente: si ignora
+                                    if ( project.search.str.trim() !== str ) return;
+                                    project.search.results = xhr.data || [];
+                                    project.search.empty = !project.search.results.length;
+                                },
+                            },
+                        } );
+                    }, 300 );
+                },
+
+                clearSearch: function( project ) {
+                    clearTimeout( project.search.timer );
+                    project.search = { str: "", results: [], empty: false, timer: null };
+                },
+
+                linkQuotation: function( project, quotation ) {
+                    this.call( "POST", BASE + "/projects/" + project.id + "/quotations", { quotationId: quotation.id }, () => {
+                        AP.widget.notify( "success", "Preventivo " + quotation.label + " collegato: nel Gantt è ora sotto il progetto." );
+                        this.load();
+                    } );
+                },
+
+                unlinkQuotation: function( project, quotation ) {
+                    bootbox.confirm( {
+                        title: "Scollega preventivo",
+                        message: "Scollegare il preventivo " + quotation.label + " dal progetto \"" + project.name + "\"?"
+                            + " Torna nel Gantt da solo; i blocchi già pianificati restano al progetto.",
+                        buttons: {
+                            confirm: { label: "Scollega", className: "btn-warning" },
+                            cancel: { label: "Annulla", className: "btn-default" },
+                        },
+                        callback: ( confirmed ) => {
+                            if ( !confirmed ) return;
+                            this.call( "DELETE", BASE + "/projects/" + project.id + "/quotations/" + quotation.id, null, () => {
+                                this.load();
+                            } );
+                        },
+                    } );
+                },
+
+                // chiamata con messaggio d'errore del server ( status ERROR ) e callback di riuscita
+                call: function( method, url, payload, onSuccess, onAlways ) {
+                    NM.util.ajax( {
+                        method: method,
+                        url: url,
+                        data: payload ? JSON.stringify( payload ) : null,
+                        callback: {
+                            done: function( xhr ) {
+                                if ( xhr.status === "ERROR" ) {
+                                    AP.widget.notify( "error", ( xhr.data && xhr.data.message ) || "Operazione non riuscita." );
+                                    return;
+                                }
+                                onSuccess( xhr );
+                            },
+                        },
+                    } ).always( function() { if ( onAlways ) onAlways(); } );
                 },
 
                 planned: function( project, typeId ) {
@@ -153,6 +313,24 @@ AP.planningProjects = ( function() {
 
                 totalPlanned: function( project ) {
                     return this.workTypes.reduce( ( sum, type ) => sum + this.planned( project, type.id ), 0 );
+                },
+
+                // colore del badge di stato del preventivo
+                statusClass: function( statusId ) {
+                    return {
+                        LAV: "bg-light text-dark border",
+                        PEN: "bg-warning text-dark",
+                        APR: "bg-primary",
+                        CCN: "bg-info",
+                        CON: "bg-success",
+                    }[ statusId ] || "bg-light text-dark";
+                },
+
+                // "yyyy-mm-dd" -> "gg/mm/aaaa" ( vuoto se non c'è )
+                formatDate: function( value ) {
+                    if ( !value ) return "";
+                    const parts = String( value ).split( "-" );
+                    return parts.length === 3 ? parts[ 2 ] + "/" + parts[ 1 ] + "/" + parts[ 0 ] : value;
                 },
 
                 format: function( value ) {

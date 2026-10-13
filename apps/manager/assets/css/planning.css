@@ -763,3 +763,26 @@
 	height: 4px;
 	background: var( --pg-load-over );
 }
+
+/* ---------- pianificazione di preventivi / progetti: priorità, data, stato, note ---------- */
+
+.pg-item-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: 2px 0 4px; font-size: 11px; }
+.pg-priority { display: inline-block; min-width: 16px; padding: 0 4px; margin-left: 4px; font-size: 10px; font-weight: 700; line-height: 15px; text-align: center; color: #fff; border-radius: 3px; }
+.pg-item-meta .pg-priority { margin-left: 0; }
+.pg-priority-A { background: #e03131; }
+.pg-priority-B { background: #f08c00; }
+.pg-priority-C { background: #868e96; }
+.pg-due { display: inline-block; padding: 0 5px; margin-left: 4px; font-size: 10px; line-height: 15px; color: #495057; background: #eef1f5; border-radius: 3px; white-space: nowrap; }
+.pg-item-meta .pg-due { margin-left: 0; }
+.pg-due.tassativa { color: #fff; background: #e03131; font-weight: 600; }
+.pg-planning-status { display: inline-block; padding: 0 5px; margin-left: 4px; font-size: 10px; line-height: 15px; color: #e67700; background: #fff4e6; border: 1px solid #ffd8a8; border-radius: 3px; white-space: nowrap; }
+.pg-info-icon { margin-left: 5px; color: #adb5bd; cursor: pointer; }
+.pg-info-icon:hover, .pg-info-icon.has-note { color: #f08c00; }
+.pg-note-link { color: #f08c00; text-decoration: none; }
+.pg-group-fill { position: relative; }
+.pg-due-marker { position: absolute; top: 50%; transform: translate( -50%, -50% ); font-size: 12px; color: #495057; pointer-events: auto; }
+.pg-due-marker.tassativa { color: #e03131; }
+.pg-item-note { padding: 8px 10px; white-space: pre-wrap; background: #fffbe6; border: 1px solid #ffe8a1; border-radius: 4px; }
+.pg-item-details dt { font-weight: 600; color: #6b7684; }
+.pg-group-title-link { cursor: pointer; }
+.pg-group-title-link:hover { text-decoration: underline; color: #2771e8; }

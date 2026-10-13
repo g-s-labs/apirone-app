@@ -83,11 +83,10 @@
                             <tr :key="project.id" class="ps-project-row" :class="{ 'ps-completed': project.completed }" @click="toggle( project.id )">
                                 <td>
                                     <i class="fas" :class="expanded[ project.id ] ? 'fa-caret-down' : 'fa-caret-right'"></i>
-                                    <a :href="'/manager/quotations/' + project.id" target="_blank" class="fw-bold" @click.stop>
-                                        n. {{ project.number }}<template v-if="project.version">/{{ project.version }}</template>
-                                    </a>
+                                    <a v-if="project.url" :href="project.url" target="_blank" class="fw-bold" @click.stop>{{ project.label }}</a>
+                                    <template v-else><span class="badge bg-primary me-1">Progetto</span><span class="fw-bold">{{ project.label }}</span></template>
                                     <span v-if="project.completed" class="badge bg-secondary ms-1">concluso</span>
-                                    <div class="small text-muted ps-project-name">{{ project.customer || project.name }}</div>
+                                    <div class="small text-muted ps-project-name">{{ project.kind === 'project' ? project.rifLibero : ( project.customer || project.name ) }}</div>
                                 </td>
                                 <td class="text-end">{{ hours( project.totals.estimatedHours ) }}</td>
                                 <td class="text-end">
