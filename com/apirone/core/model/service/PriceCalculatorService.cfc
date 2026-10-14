@@ -846,20 +846,12 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 				//se componente è materia prima faccio i calcoli in base all'unità di misura
 				if (itemComponent.raw_product_processiong_type == 'MP') {
 					// passaggi per ottenere il coefficiente dal metadata e l'unita di misura
-					var rawValueId = productItem.getAttributeValue().getRawValue().getId();
-					var metadata = metadataService.list( rawValueId = rawValueId );
-					if ( Len( metadata ) == 0) {
+					var measure = signageMaterialMeasure( productItem.getAttributeValue().getRawValue().getId() );
+					if ( StructIsEmpty( measure ) ) {
 						continue;
 					}
-					var valuedMetadataIndex = arrayFind(metadata, function(item) {
-						return item.getValue() && item.getValue() > 0;
-					});
-					if (valuedMetadataIndex EQ 0) {
-						continue;
-					}
-					var metadata = metadata[valuedMetadataIndex];
-					var coefficient = metadata.getValue();
-					var measurementUnit = metadata.getType().getMeasurementUnit().getId();
+					var coefficient = measure.coefficient;
+					var measurementUnit = measure.unit;
 					appendLog( message = "Coefficiente su Unità di misura: #coefficient# #measurementUnit#" );
 					/* dato che la quantita del comoponente può essere diversa da 1, divio il costo del componente per la quantità
 					e.g. 13.25€ costo / 2 quantità = 6.625€ costo per unità di quantità in modo da poter fare le operazioni di conversione con in mano il // costo unitario. */
@@ -916,6 +908,59 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
 		addCost( "Costo attributo #itemId#", itemCost, "I" );
 		return itemCost;
+	}
+
+	/**
+	 * Coefficiente e unità di misura ( KG-MMC, MQ, ... ) del primo metadata valorizzato
+	 * del raw value di un attributo: servono a convertire le materie prime della
+	 * segnaletica in peso/superficie della singola lettera. Struct vuota se non c'è.
+	 */
+	public Struct function signageMaterialMeasure( required rawValueId ){
+		var metadata = metadataService.list( rawValueId = arguments.rawValueId );
+		if ( Len( metadata ) == 0 ) {
+			return {};
+		}
+		var valuedMetadataIndex = arrayFind( metadata, function( item ) {
+			return item.getValue() && item.getValue() > 0;
+		} );
+		if ( valuedMetadataIndex EQ 0 ) {
+			return {};
+		}
+		var valued = metadata[ valuedMetadataIndex ];
+		return {
+			"coefficient" = valued.getValue(),
+			"unit"        = valued.getType().getMeasurementUnit().getId()
+		};
+	}
+
+	/**
+	 * Dimensioni della singola lettera ( stessa logica di calculate() ): altezza dal corpo
+	 * del font, larghezza dal rapporto altezza/larghezza del font, spessore dal codice del
+	 * modello del prodotto. Struct vuota se mancano corpo o rapporto.
+	 */
+	public Struct function signageLetterSizes( required signageConfigItemId, required product ){
+		var signageConfigItem = super.service( "SignageConfigItem" ).get( arguments.signageConfigItemId );
+		if ( IsNull( signageConfigItem ) || IsNull( signageConfigItem.getSize() ) ) {
+			return {};
+		}
+		var fontFamilySize = super.service( "FontFamilySize" ).get( signageConfigItem.getSize().getId() );
+		if ( IsNull( fontFamilySize ) ) {
+			return {};
+		}
+		var signageConfig = super.service( "SignageConfig" ).get( signageConfigItem.getSignageConfigId() );
+		var heightWidthRatio = signageConfig.getFont().getHeightWidthRatio();
+		if ( IsNull( heightWidthRatio ) OR heightWidthRatio LTE 0 ) {
+			return {};
+		}
+		var fontHeight = fontFamilySize.getName();
+		var thickness  = stringThicknessToDecimal( arguments.product.getModel().getCode() );
+		return {
+			"height"      = fontHeight,
+			"width"       = fontHeight / heightWidthRatio,
+			"thickness"   = thickness,
+			"surfaceArea" = fontHeight * ( fontHeight / heightWidthRatio ),
+			"volume"      = thickness > 0 ? fontHeight * ( fontHeight / heightWidthRatio ) * thickness : 0
+		};
 	}
 
 	private function stringThicknessToDecimal(str) {

@@ -1380,23 +1380,71 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			if ( IsInstanceOf( quotationItem, "com.apirone.core.model.bean.QuotationItemSignage" ) ) {
 				var signageConfigItemId = quotationItem.getSignageConfigItem().getId();
 
-				var signageComponents = componentSvc.list(
-					signageConfigItemId            = signageConfigItemId,
-					includeBaseAttributeComponents = true
-				);
-
-				if ( productItemIds.len() > 0 ) {
-					var signageProductComps = componentSvc.listBySignageItemProductJoinIds(
-						signageConfigItemId = signageConfigItemId,
-						productItemIds      = productItemIds
-					);
-					for ( var spc in signageProductComps ) {
-						ArrayAppend( allComponents, parseComponent( spc ) );
-					}
+				// Come nel prezzo ( PriceCalculatorService.calculate ) questi componenti valgono
+				// per singola lettera: la quantità in distinta è moltiplicata per le lettere
+				// ( spazi esclusi ) e le materie prime con metadata KG-MMC / MQ diventano
+				// peso / superficie della lettera per il coefficiente.
+				var letters = 0;
+				for ( var textRow in quotationItem.getSignageRows() ?: [] ) {
+					letters += getQuotationItemService().signageLettersCount( {
+						"charCount" = textRow.getCharCount(),
+						"content"   = textRow.getContent() ?: ""
+					} );
 				}
 
-				for ( var signageComponent in signageComponents ) {
-					ArrayAppend( allComponents, parseComponent( signageComponent ) );
+				if ( letters > 0 ) {
+					var calculator  = super.service( "PriceCalculator" );
+					var letterSizes = calculator.signageLetterSizes( signageConfigItemId, product );
+
+					if ( productItemIds.len() > 0 ) {
+						var signagePiMap = getProductItemService().getMany( productItemIds );
+						// un attributo alla volta: il coefficiente dipende dal suo raw value
+						for ( var pid in productItemIds ) {
+							var signageProductComps = componentSvc.listBySignageItemProductJoinIds(
+								signageConfigItemId = signageConfigItemId,
+								productItemIds      = [ pid ]
+							);
+							if ( !ArrayLen( signageProductComps ) ) {
+								continue;
+							}
+
+							var measure = {};
+							if ( StructKeyExists( signagePiMap, pid ) && !StructIsEmpty( letterSizes ) ) {
+								measure = calculator.signageMaterialMeasure( signagePiMap[ pid ].getAttributeValue().getRawValue().getId() );
+							}
+
+							for ( var spc in signageProductComps ) {
+								var signageComp = parseComponent( spc );
+								var qtyPerLetter = Val( signageComp.DSQTAMOV );
+
+								if ( !StructIsEmpty( measure ) && !IsNull( signageComp.DSCODMAT ) && Len( signageComp.DSCODMAT )
+									&& componentSvc.getDao().getRawProductData( signageComp.DSCODMAT ).raw_product_processiong_type == "MP" ) {
+									if ( measure.unit == "KG-MMC" ) {
+										qtyPerLetter = letterSizes.volume * measure.coefficient;
+									} else if ( measure.unit == "MQ" ) {
+										qtyPerLetter = letterSizes.surfaceArea * measure.coefficient;
+									}
+								}
+
+								signageComp.DSQTAMOV = qtyPerLetter * letters;
+								if ( signageComp.DSQTAMOV > 0 ) {
+									ArrayAppend( allComponents, signageComp );
+								}
+							}
+						}
+					}
+
+					var signageComponents = componentSvc.list(
+						signageConfigItemId            = signageConfigItemId,
+						includeBaseAttributeComponents = true
+					);
+					for ( var signageComponent in signageComponents ) {
+						var signageComp = parseComponent( signageComponent );
+						signageComp.DSQTAMOV = Val( signageComp.DSQTAMOV ) * letters;
+						if ( signageComp.DSQTAMOV > 0 ) {
+							ArrayAppend( allComponents, signageComp );
+						}
+					}
 				}
 			}
 		}

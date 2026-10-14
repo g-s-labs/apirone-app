@@ -1424,6 +1424,19 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	}
 
 	/*
+		Lettere di una riga segnaletica ai fini del prezzo: charCount ( pittogramma = 1 )
+		meno gli spazi del contenuto, che occupano posto nella riga ma non sono lettere.
+		Senza content ( vecchi chiamanti ) resta il charCount.
+	*/
+	public Numeric function signageLettersCount( required Struct signageRow ){
+		var letters = Val( arguments.signageRow.charCount ?: 0 );
+		if ( !IsNull( arguments.signageRow.content ) && IsSimpleValue( arguments.signageRow.content ) ) {
+			letters -= Len( REReplace( arguments.signageRow.content, "[^\s]", "", "all" ) );
+		}
+		return Max( letters, 0 );
+	}
+
+	/*
 		Recupera il pricing di un item signage. I parametri opzionali
 		preloadedQuotation e preloadedQuotationItem permettono al chiamante di
 		passare i bean già caricati, evitando un refetch per item (N+1).
@@ -1476,7 +1489,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
 		var lettersQuantity = 0;
 		for ( var signageRow in json.quotationItem.signageRows._data ) {
-			lettersQuantity += Val( signageRow.charCount ) ? signageRow.charCount : 0;
+			lettersQuantity += signageLettersCount( signageRow );
 		}
 
 		// Quotation: se il chiamante l'ha già caricata viene riusata, altrimenti
@@ -2077,7 +2090,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
 			json.quotationItem.signageConfigItem.id = quotationItem.getSignageConfigItem().getId()
 			for ( var signageRow in quotationItem.getSignageRows() ) {
-				json.quotationItem.signageRows._data.append({ charCount = signageRow.getCharCount() });
+				json.quotationItem.signageRows._data.append({ charCount = signageRow.getCharCount(), content = signageRow.getContent() ?: "" });
 			}
 			var price = getSignagePricing( json, preloadedQuotation, quotationItem )
 		} elseif (isNull(quotationItem.getArticle()) && !IsInstanceOf(quotationItem, "com.apirone.core.model.bean.QuotationItemPlate")) {
