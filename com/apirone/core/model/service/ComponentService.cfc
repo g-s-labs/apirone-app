@@ -492,8 +492,21 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		var rawProductData = getDao().getRawProductData( arguments.rawProductId );
 		component[ "raw_product_name" ] = rawProductData.raw_product_name;
 		component[ "raw_product_processiong_type" ] = rawProductData.raw_product_processiong_type;
+		component[ "raw_product_unit" ] = rawProductData.raw_product_unit;
 
 		return component;
+	}
+
+	/**
+	 * Maggiorazione delle quantità dei componenti la cui materia prima non è a pezzi
+	 * ( sfrido ): +15%. Vale sia per i costi ( PriceCalculatorService ) sia per la
+	 * distinta base esportata a Verticale ( QuotationService.exportProducts ).
+	 * Escluse anche PA ( paia ), EU ( valuta in euro ) e NR ( numero ). Unità vuota = PZ, come in
+	 * RawProductService.
+	 */
+	public Numeric function quantityWasteFactor( unit ){
+		var u = IsNull( arguments.unit ) ? "" : UCase( Trim( arguments.unit ) );
+		return ( !Len( u ) || ListFind( "PZ,PA,EU,NR", u ) ) ? 1 : 1.15;
 	}
 
 	public com.apirone.core.model.bean.Result function search(

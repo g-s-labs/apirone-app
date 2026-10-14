@@ -1073,6 +1073,16 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 						}
 					}
 
+					// materia prima non a pezzi ( né PA / EU / NR ): quantità +15% ( sfrido ), come nei costi. L'unità
+					// si legge dalla stessa fonte del calcolo prezzi ( arunmis1 della materia prima )
+					var wasteComponentSvc = getComponentService();
+					for ( var row in allComponents ) {
+						var rowUnit = ( !IsNull( row.DSCODMAT ) && Len( row.DSCODMAT ) )
+							? wasteComponentSvc.getDao().getRawProductData( row.DSCODMAT ).raw_product_unit
+							: "PZ";
+						row.DSQTAMOV = Val( row.DSQTAMOV ) * wasteComponentSvc.quantityWasteFactor( rowUnit );
+					}
+
 					var grouped = {};
 					for ( var row in allComponents ) {
 						var key = row.DSCODMAT & "|" & row.DSVARMAT & "|" & row.DSCOLMAT;

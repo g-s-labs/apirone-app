@@ -662,11 +662,17 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
 				var quantity = component.totalQuantity; // with override
 
+				// materia prima non a pezzi ( né PA / EU / NR ): quantità +15% ( sfrido )
+				var unit = component.raw_product_unit ?: "PZ";
+				var wasteFactor = getComponentService().quantityWasteFactor( unit );
+				quantity = quantity * wasteFactor;
+				var wasteLabel = wasteFactor != 1 ? " (#unit# +15%)" : "";
+
 				var rowTotal = amount * quantity;
 
 				total = total + rowTotal;
 
-				appendLog( "#name# - costo unitario: #amount#€ * quantità: #quantity#; Costo compon.: #formatExtended( rowTotal )#€" );
+				appendLog( "#name# - costo unitario: #amount#€ * quantità: #quantity##wasteLabel#; Costo compon.: #formatExtended( rowTotal )#€" );
 			} else {
 				appendLog( "#name#;CANCELLATO" );
 			}
@@ -843,6 +849,9 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 					);
 					continue;
 				}
+				// materia prima non a pezzi ( né PA / EU / NR ): quantità ( anche peso / superficie calcolati ) +15%
+				var wasteFactor = getComponentService().quantityWasteFactor( itemComponent.raw_product_unit ?: "PZ" );
+				var wasteLabel  = wasteFactor != 1 ? " * #wasteFactor# (#itemComponent.raw_product_unit# +15%)" : "";
 				//se componente è materia prima faccio i calcoli in base all'unità di misura
 				if (itemComponent.raw_product_processiong_type == 'MP') {
 					// passaggi per ottenere il coefficiente dal metadata e l'unita di misura
@@ -858,8 +867,8 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 					var unitPrice = itemComponentCost / itemComponentQuantity;
 					if (measurementUnit EQ 'KG-MMC') {
 						//se ho perso per volume, prendo il volume della lettera e lo moltiplico per il coefficiente
-						var weight = sizes.volume * coefficient
-						appendLog( message = "Peso calcolato: #weight#kg da volume: #sizes.volume#mm³ e coefficiente: #coefficient# #measurementUnit#" );
+						var weight = sizes.volume * coefficient * wasteFactor
+						appendLog( message = "Peso calcolato: #weight#kg da volume: #sizes.volume#mm³ e coefficiente: #coefficient# #measurementUnit##wasteLabel#" );
 						//prendo il prezzo unitario e lo moltiplico per il peso calcolato
 						var weightPrice = unitPrice * weight;
 						//sommo il costo al costo dei componenti
@@ -868,26 +877,26 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 						appendLog( message = "Componente: #itemComponent.raw_product_name#. Costo calcolato per peso: #weightPrice#€ ricavato moltiplicando #unitPrice#€ per #weight#kg; Costo componente calcolato: #formatExtended( actualComponentCost )#€" );
 					} else if (measurementUnit EQ 'MQ') {
 						//uguale al volume, ma usero la superficie invece del volume per i calcoli
-						var surfaceArea = sizes.surfaceArea * coefficient
-						appendLog( message = "Superficie calcolata: #surfaceArea#mq da superficie: #sizes.surfaceArea#mm² e coefficiente: #coefficient# #measurementUnit#" );
+						var surfaceArea = sizes.surfaceArea * coefficient * wasteFactor
+						appendLog( message = "Superficie calcolata: #surfaceArea#mq da superficie: #sizes.surfaceArea#mm² e coefficiente: #coefficient# #measurementUnit##wasteLabel#" );
 						var surfaceAreaPrice = unitPrice * surfaceArea;
 						compCost += surfaceAreaPrice;
 						actualComponentCost = surfaceAreaPrice;
 						appendLog( message = "Componente: #itemComponent.raw_product_name#. Costo calcolato per superficie: #surfaceAreaPrice#€ ricavato moltiplicando #unitPrice#€ per #surfaceArea#mq; Costo componente calcolato: #formatExtended( actualComponentCost )#€" );
 					} else {
-						actualComponentCost = itemComponentCost * itemComponentQuantity;
+						actualComponentCost = itemComponentCost * itemComponentQuantity * wasteFactor;
 						compCost += actualComponentCost;
 						appendLog(
-							message = "Componente: #itemComponent.raw_product_name#. Costo unitario componente: #formatExtended( itemComponentCost )#€ * quantità: #itemComponentQuantity#; Costo componente calcolato: #formatExtended( actualComponentCost )#€"
+							message = "Componente: #itemComponent.raw_product_name#. Costo unitario componente: #formatExtended( itemComponentCost )#€ * quantità: #itemComponentQuantity##wasteLabel#; Costo componente calcolato: #formatExtended( actualComponentCost )#€"
 						);
 					}
 				} else {
 					//se non è materia prima sommo direttamente il costo moltiplicato per la quantità
-					actualComponentCost = itemComponentCost * itemComponentQuantity;
+					actualComponentCost = itemComponentCost * itemComponentQuantity * wasteFactor;
 					appendLog(
-						message = "Componente: #itemComponent.raw_product_name#. Costo unitario componente: #formatExtended( itemComponentCost )#€ * quantità: #itemComponentQuantity#; Costo componente calcolato: #formatExtended( actualComponentCost )#€"
+						message = "Componente: #itemComponent.raw_product_name#. Costo unitario componente: #formatExtended( itemComponentCost )#€ * quantità: #itemComponentQuantity##wasteLabel#; Costo componente calcolato: #formatExtended( actualComponentCost )#€"
 					);
-					compCost += itemComponentCost * itemComponentQuantity;
+					compCost += actualComponentCost;
 				}
 
 			}

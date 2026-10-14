@@ -68,6 +68,7 @@
 		<cfset var rawProduct = getRawProductData( component.raw_product_id )>
 		<cfset component["raw_product_name"] = rawProduct.raw_product_name>
 		<cfset component["raw_product_processiong_type"] = rawProduct.raw_product_processiong_type>
+		<cfset component["raw_product_unit"] = rawProduct.raw_product_unit>
 
 		<cfreturn component>
 	</cffunction>
@@ -179,7 +180,8 @@
 		<cfquery name="rawProductData" datasource="apirone">
 			SELECT
 				ardesart as raw_product_name,
-				CASE WHEN artipmat = 'LAV' THEN 'LV' ELSE 'MP' END AS raw_product_processiong_type
+				CASE WHEN artipmat = 'LAV' THEN 'LV' ELSE 'MP' END AS raw_product_processiong_type,
+				COALESCE( NULLIF( TRIM( arunmis1 ), '' ), 'PZ' ) AS raw_product_unit
 			FROM
 				verticale_raw_products a
 			WHERE
@@ -190,10 +192,11 @@
 		<cfif rawProductData.recordCount GT 0>
 			<cfset dataMemo[ arguments.rawProductId ] = {
 				"raw_product_name"              = rawProductData.getRow(1).raw_product_name,
-				"raw_product_processiong_type"  = rawProductData.getRow(1).raw_product_processiong_type
+				"raw_product_processiong_type"  = rawProductData.getRow(1).raw_product_processiong_type,
+				"raw_product_unit"              = rawProductData.getRow(1).raw_product_unit
 			}>
 		<cfelse>
-			<cfset dataMemo[ arguments.rawProductId ] = { "raw_product_name" = "", "raw_product_processiong_type" = "" }>
+			<cfset dataMemo[ arguments.rawProductId ] = { "raw_product_name" = "", "raw_product_processiong_type" = "", "raw_product_unit" = "PZ" }>
 		</cfif>
 
 		<cfreturn dataMemo[ arguments.rawProductId ]>
@@ -377,7 +380,8 @@
 			SELECT
 				a.arcodart AS arcodart,
 				a.ardesart AS ardesart,
-				CASE WHEN a.artipmat = 'LAV' THEN 'LV' ELSE 'MP' END AS raw_product_processiong_type
+				CASE WHEN a.artipmat = 'LAV' THEN 'LV' ELSE 'MP' END AS raw_product_processiong_type,
+				COALESCE( NULLIF( TRIM( a.arunmis1 ), '' ), 'PZ' ) AS raw_product_unit
 			FROM verticale_raw_products a
 			WHERE a.arcodart IN (
 				<cfqueryparam value="#ArrayToList( pendingIds )#" list="true" cfsqltype="varchar">
@@ -388,7 +392,8 @@
 		<cfloop query="rawProductsById">
 			<cfset rowsByName[ Trim( rawProductsById.arcodart ) ] = {
 				"raw_product_name"             = rawProductsById.ardesart,
-				"raw_product_processiong_type" = rawProductsById.raw_product_processiong_type
+				"raw_product_processiong_type" = rawProductsById.raw_product_processiong_type,
+				"raw_product_unit"             = rawProductsById.raw_product_unit
 			}>
 		</cfloop>
 
@@ -398,7 +403,7 @@
 			<cfif StructKeyExists( rowsByName, Trim( rid ) )>
 				<cfset dataMemo[ rid ] = rowsByName[ Trim( rid ) ]>
 			<cfelse>
-				<cfset dataMemo[ rid ] = { "raw_product_name" = "", "raw_product_processiong_type" = "" }>
+				<cfset dataMemo[ rid ] = { "raw_product_name" = "", "raw_product_processiong_type" = "", "raw_product_unit" = "PZ" }>
 			</cfif>
 		</cfloop>
 	</cffunction>
