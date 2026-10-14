@@ -13,6 +13,12 @@
                 --->
                 <div class="qt-actions d-flex flex-wrap justify-content-end gap-2 mb-2">
                     #button( bind="click:showHeader", size="sm", label="Dettaglio", icon="edit" )#
+                    <button type="button"
+                            class="btn btn-outline-secondary btn-sm"
+                            data-file-name="placche_#prc.quotation.getQuotationNumber()#_#prc.quotation.getVersionNumber()#.json"
+                            data-bind="click:downloadPlatesJson">
+                        <i class="fas fa-download"></i> Scarica DWG Placche
+                    </button>
                     #button( bind="click:openDocumentsModal", size="sm", label="Documenti", icon="folder-open" )#
                     #button( bind="click:openPrintModal", size="sm", label="Stampe", icon="print" )#
                     <div class="position-relative">

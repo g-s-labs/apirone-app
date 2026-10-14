@@ -521,6 +521,37 @@ AP.quotation.detail = (function () {
 			});
 		},
 
+		// stesso JSON di export3dPlates ( array di tutte le placche ), scaricato come file
+		downloadPlatesJson: function (event) {
+			var fileName = $(event.currentTarget).data("file-name") || "placche.json";
+			AP.loading.show();
+			NM.util.ajax({
+				method: "GET",
+				url: "/manager/ajax/quotations/" + AP.page.quotation.id + "/plates-export3d",
+				callback: {
+					done: function (xhr) {
+						AP.loading.hide();
+						if (xhr.status == "INVALID") {
+							NM.form.showMessages(xhr.data);
+							return;
+						}
+						var blob = new Blob([JSON.stringify(xhr.data, null, 2)], { type: "application/json" });
+						var url = URL.createObjectURL(blob);
+						var a = document.createElement("a");
+						a.href = url;
+						a.download = fileName;
+						document.body.appendChild(a);
+						a.click();
+						document.body.removeChild(a);
+						setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+					},
+					fail: function () {
+						AP.loading.hide();
+					}
+				}
+			});
+		},
+
 		changeType: function (event) {
 
 			var target = $(event.currentTarget);
