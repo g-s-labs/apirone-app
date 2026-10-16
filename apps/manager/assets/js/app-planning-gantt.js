@@ -1,9 +1,11 @@
 AP.namespace( "planningGantt" );
 
 /**
- * Gantt della pianificazione: persone sui preventivi attivi ( qualunque stato
- * tranne Perso ed Estinto ) e sui progetti. Si assegnano persone solo alle voci
- * "In corso" ( assignable ); ogni persona riceve le attività delle sue tipologie.
+ * Calendario ( Gantt ) della pianificazione: persone sui preventivi attivi
+ * ( qualunque stato tranne Perso ed Estinto ) e sui progetti. Si assegnano
+ * persone alle voci "In corso" e "Da programmare" ( assignable ); ogni persona
+ * riceve le attività delle sue tipologie. Entrambe le viste mostrano le voci in
+ * corso e da programmare, non le concluse né le sospese.
  *
  * Un blocco è una persona su un'attività di un preventivo, con le ore giorno
  * per giorno ( planning_blocks / planning_block_days ): la distribuzione delle
@@ -12,12 +14,17 @@ AP.namespace( "planningGantt" );
  *
  * Interazioni:
  * - un riquadro di "Da pianificare" trascinato su una persona del tipo giusto
- *   crea un blocco con tutte le ore mancanti, dal giorno del rilascio;
+ *   crea un blocco con tutte le ore mancanti, dal giorno del rilascio; un
+ *   riquadro senza ore residue ( 0 h ) apre la nuova attività ( ore extra );
+ * - il nome di una persona trascinato su un giorno, o il suo "+", apre la
+ *   nuova attività ( es. ore extra );
  * - una barra trascinata cambia data ( e persona, nella vista Persone );
  * - il bordo destro di una barra la allunga o accorcia;
  * - un click sulla barra la seleziona e mostra i pulsanti ( ore per giorno,
- *   dividi dal giorno cliccato, sabati, festivi, elimina ); doppio click apre
- *   le ore del giorno cliccato.
+ *   dividi dal giorno cliccato, sabati, festivi, lucchetto, elimina ); doppio
+ *   click apre le ore del giorno cliccato;
+ * - un blocco con il lucchetto non si sposta né si modifica: lo toglie solo
+ *   un ADM ( AP.page.isAdmin ).
  *
  * Scale: giornaliera ( 2 settimane, colonne larghe con le ore di ogni giorno ),
  * settimanale ( 6 settimane ), mensile ( mese di calendario, default ).
@@ -155,6 +162,7 @@ AP.planningGantt = ( function() {
             data: {
                 workTypes: AP.page.workTypes || [],
                 options: AP.page.planningOptions || { statuses: [], dateTypes: [], priorities: [] },
+                isAdmin: !!AP.page.isAdmin,
                 scale: prefs.scale,
                 groupBy: prefs.groupBy,
                 anchor: new Date(),
@@ -178,8 +186,9 @@ AP.planningGantt = ( function() {
                 selected: null,
                 dayEditor: { open: false },
 
-                // nuova attività ( extra ) creata trascinando una persona su un giorno
-                extraForm: { person: null, day: "", dayLabel: "", quotationId: "", workTypeId: "", hours: 8, startTime: "", note: "", extra: true },
+                // nuova attività ( extra ): persona trascinata su un giorno, "+" della
+                // persona o riquadro senza ore residue
+                extraForm: { person: null, day: "", quotationId: "", workTypeId: "", hours: 8, startTime: "", note: "", extra: true },
 
                 // preventivo / progetto aperto nella modale dei dettagli ( stato, priorità, data, note )
                 itemInfo: null,
@@ -291,28 +300,33 @@ AP.planningGantt = ( function() {
                 },
 
                 /*
-                    Ore stimate non ancora pianificate, per preventivo e tipo. In
-                    fase 3 i riquadri si trascinano sulle persone.
+                    Ore stimate per preventivo e tipo, da trascinare sulle persone.
+                    Anche le attività già tutte pianificate ( 0 h residue, mai sotto
+                    zero ): trascinate aprono la nuova attività ( ore extra ). Prima
+                    le voci con ore residue, e in ogni voce i loro riquadri.
                 */
                 backlog: function() {
-                    const result = [];
+                    const open = [];
+                    const done = [];
                     this.quotations.forEach( ( quotation ) => {
-                        // solo le voci "In corso": a sospese e da programmare non si assegnano persone
+                        // voci in corso e da programmare: a sospese e concluse non si assegnano persone
                         if ( !quotation.plannable || !quotation.assignable ) return;
                         const chips = [];
                         this.workTypes.forEach( function( type ) {
                             const hours = quotation.hours[ type.id ];
-                            if ( !hours ) return;
-                            const remaining = Math.round( ( hours.estimated - hours.planned ) * 100 ) / 100;
-                            if ( remaining > 0 ) {
-                                chips.push( { workTypeId: type.id, estimated: hours.estimated, planned: hours.planned, remaining: remaining } );
-                            }
+                            if ( !hours || !( hours.estimated > 0 || hours.planned > 0 ) ) return;
+                            const remaining = Math.max( 0, Math.round( ( hours.estimated - hours.planned ) * 100 ) / 100 );
+                            chips.push( { workTypeId: type.id, estimated: hours.estimated, planned: hours.planned, remaining: remaining } );
                         } );
-                        if ( chips.length ) {
-                            result.push( { quotation: quotation, chips: chips } );
-                        }
+                        if ( !chips.length ) return;
+                        chips.sort( function( a, b ) { return ( b.remaining > 0 ) - ( a.remaining > 0 ); } );
+                        const remaining = chips.some( function( chip ) { return chip.remaining > 0; } );
+                        ( remaining ? open : done ).push( { quotation: quotation, chips: chips, remaining: remaining } );
                     } );
-                    return result;
+                    const compare = this.compareItems;
+                    open.sort( function( a, b ) { return compare( a.quotation, b.quotation ); } );
+                    done.sort( function( a, b ) { return compare( a.quotation, b.quotation ); } );
+                    return open.concat( done );
                 },
 
                 rowGroups: function() {
@@ -440,13 +454,10 @@ AP.planningGantt = ( function() {
                 // per Preventivi: un gruppo per preventivo, una riga per tipo di
                 // attività; i progetti conclusi non si vedono più
                 quotationGroups: function() {
-                    // le voci in corso e quelle che hanno già blocchi ( anche se sospese ): le
-                    // altre da programmare / sospese restano in Ore progetti
-                    const withBlocks = {};
-                    this.blocks.forEach( function( block ) { withBlocks[ block.quotationId ] = true; } );
+                    // le voci in corso e da programmare: non le concluse né le sospese
                     return this.quotations.filter( function( quotation ) {
-                        return !quotation.completed && ( quotation.assignable || withBlocks[ quotation.id ] );
-                    } ).map( ( quotation ) => {
+                        return quotation.planningStatusId === "COR" || quotation.planningStatusId === "DAP";
+                    } ).sort( this.compareItems ).map( ( quotation ) => {
                         const rows = [];
                         this.workTypes.forEach( ( type ) => {
                             const hours = quotation.hours[ type.id ];
@@ -475,6 +486,39 @@ AP.planningGantt = ( function() {
                             emptyText: "Nessuna ora di attività inserita",
                         };
                     } );
+                },
+
+                /*
+                    Ordine delle voci ( vista Preventivi e "Da pianificare" ): prima le
+                    in corso, poi per data del preventivo / progetto crescente ( prima
+                    quelle che scadono prima, senza data in fondo ), infine dalla più
+                    recente ( preventivi e progetti insieme ).
+                */
+                compareItems: function( a, b ) {
+                    const status = ( a.planningStatusId === "COR" ? 0 : 1 ) - ( b.planningStatusId === "COR" ? 0 : 1 );
+                    if ( status ) return status;
+                    if ( ( a.dueDate || "" ) !== ( b.dueDate || "" ) ) {
+                        if ( !a.dueDate ) return 1;
+                        if ( !b.dueDate ) return -1;
+                        return a.dueDate < b.dueDate ? -1 : 1;
+                    }
+                    return ( b.createdAt || "" ).localeCompare( a.createdAt || "" );
+                },
+
+                // scadenza della voce rispetto a oggi: "overdue" ( data passata ),
+                // "soon" ( entro 30 giorni ), "" ( più avanti o senza data )
+                dueState: function( item ) {
+                    if ( !item || !item.dueDate ) return "";
+                    const days = dayNumber( item.dueDate ) - dayNumber( this.today );
+                    if ( days < 0 ) return "overdue";
+                    return days <= 30 ? "soon" : "";
+                },
+
+                dueStateTitle: function( item ) {
+                    const state = this.dueState( item );
+                    if ( state === "overdue" ) return "Scaduto: " + this.dueTitle( item );
+                    if ( state === "soon" ) return "Scade entro 30 giorni: " + this.dueTitle( item );
+                    return "";
                 },
 
                 buildRow: function( key, title, subtitle, blocks, person, dotColor ) {
@@ -662,6 +706,7 @@ AP.planningGantt = ( function() {
                         this.format( block.total ) + " h, dal " + this.formatDay( block.start ) + " " + this.blockStart( block )
                             + " al " + this.formatDay( block.end ) + " " + this.blockEnd( block ),
                     ];
+                    if ( block.locked ) lines.push( "Con lucchetto" + ( block.lockedBy ? " ( " + block.lockedBy + ", " + block.lockedAt + " )" : "" ) + ": non si sposta" );
                     if ( block.extra ) lines.push( "Ore extra ( oltre la stima del progetto )" );
                     if ( block.note ) lines.push( "Note: " + block.note );
                     if ( block.useSaturday ) lines.push( "Usa i sabati" );
@@ -861,6 +906,7 @@ AP.planningGantt = ( function() {
                         kind: "backlog",
                         quotationId: quotation.id,
                         workTypeId: chip.workTypeId,
+                        // 0: già tutto pianificato, al rilascio si apre la nuova attività ( extra )
                         hours: chip.remaining,
                         label: this.quotationLabel( quotation ),
                     };
@@ -921,8 +967,9 @@ AP.planningGantt = ( function() {
                     return this.workTypes.filter( function( type ) { return person.workTypeIds.indexOf( type.id ) !== -1; } );
                 },
 
-                openExtraModal: function( person, dayKey ) {
-                    const day = this.days.find( function( item ) { return item.key === dayKey; } );
+                // preset: { quotationId, workTypeId } ( riquadro senza ore residue )
+                openExtraModal: function( person, dayKey, preset ) {
+                    preset = preset || {};
                     // ore di default: quelle che la persona lavora normalmente quel giorno
                     let hours = person.hours[ ( parseDay( dayKey ).getDay() + 6 ) % 7 ] || 0;
                     if ( !hours ) hours = Math.max.apply( null, person.hours.slice( 0, 5 ) ) || 8;
@@ -930,9 +977,8 @@ AP.planningGantt = ( function() {
                     this.extraForm = {
                         person: person,
                         day: dayKey,
-                        dayLabel: this.formatDayLong( dayKey ) + ( day && day.nonWorking ? " ( " + day.nonWorking.name.toLowerCase() + " )" : "" ),
-                        quotationId: "",
-                        workTypeId: person.workTypeIds[ 0 ] || "",
+                        quotationId: preset.quotationId || "",
+                        workTypeId: preset.workTypeId || person.workTypeIds[ 0 ] || "",
                         hours: hours,
                         startTime: "",
                         note: "",
@@ -941,8 +987,25 @@ AP.planningGantt = ( function() {
                     NM.util.openModal( $( "#pg-extra-modal" ) );
                 },
 
+                // "+" della persona: oggi se è nel periodo visibile, altrimenti il primo giorno
+                openExtraFor: function( person ) {
+                    const day = this.dayIndex[ this.today ] !== undefined ? this.today : this.days[ 0 ].key;
+                    this.openExtraModal( person, day );
+                },
+
+                // giorno della nuova attività, con il tipo se non lavorativo ( se è nel periodo visibile )
+                extraDayNote: function() {
+                    const key = this.extraForm.day;
+                    const day = key && this.days.find( function( item ) { return item.key === key; } );
+                    return day && day.nonWorking ? day.nonWorking.name : "";
+                },
+
                 saveExtra: function() {
                     const form = this.extraForm;
+                    if ( !/^\d{4}-\d{2}-\d{2}$/.test( form.day || "" ) ) {
+                        AP.widget.notify( "warning", "Scegli il giorno." );
+                        return;
+                    }
                     if ( !form.quotationId ) {
                         AP.widget.notify( "warning", "Scegli il progetto." );
                         return;
@@ -974,6 +1037,24 @@ AP.planningGantt = ( function() {
                     this.api( "/" + block.id + "/extra", { extra: !block.extra } );
                 },
 
+                // lucchetto: lo mette chiunque, lo toglie solo un ADM
+                canToggleLock: function( block ) {
+                    return !block.locked || this.isAdmin;
+                },
+
+                toggleLock: function( block ) {
+                    if ( !this.canToggleLock( block ) ) return;
+                    this.api( "/" + block.id + "/lock", { locked: !block.locked } ).then( ( xhr ) => {
+                        if ( xhr ) AP.widget.notify( "success", block.locked ? "Lucchetto tolto." : "Blocco con lucchetto: non si può più spostare." );
+                    } );
+                },
+
+                lockTitle: function( block ) {
+                    if ( !block.locked ) return "Lucchetto: il blocco non si potrà più spostare né modificare";
+                    const by = block.lockedBy ? " da " + block.lockedBy + " il " + block.lockedAt : "";
+                    return "Bloccato" + by + ( this.isAdmin ? ". Clic per togliere il lucchetto" : ". Solo un amministratore può toglierlo" );
+                },
+
                 backlogDragOver: function( event, row ) {
                     if ( !this.canDropOn( row ) ) return;
                     event.preventDefault();
@@ -999,6 +1080,11 @@ AP.planningGantt = ( function() {
                     // persona trascinata su un giorno: nuova attività ( extra ) da completare
                     if ( payload.kind === "person" ) {
                         this.openExtraModal( row.person, start );
+                        return;
+                    }
+                    // attività senza ore residue: nuova attività ( extra ) già impostata
+                    if ( !( payload.hours > 0 ) ) {
+                        this.openExtraModal( row.person, start, { quotationId: payload.quotationId, workTypeId: payload.workTypeId } );
                         return;
                     }
 
@@ -1045,6 +1131,8 @@ AP.planningGantt = ( function() {
                         mode: "move",
                         element: element,
                         bar: bar,
+                        // con il lucchetto si può solo selezionare
+                        locked: bar.block.locked,
                         startX: event.clientX,
                         startY: event.clientY,
                         moved: false,
@@ -1079,6 +1167,14 @@ AP.planningGantt = ( function() {
                     const dx = event.clientX - pointer.startX;
                     const dy = event.clientY - pointer.startY;
                     if ( !pointer.moved && Math.abs( dx ) < 4 && Math.abs( dy ) < 4 ) return;
+
+                    if ( pointer.locked ) {
+                        if ( !pointer.warned ) {
+                            pointer.warned = true;
+                            AP.widget.notify( "info", "Il blocco ha il lucchetto: non si può spostare." );
+                        }
+                        return;
+                    }
 
                     if ( !pointer.moved ) {
                         pointer.moved = true;
@@ -1178,9 +1274,7 @@ AP.planningGantt = ( function() {
 
                 dueTitle: function( quotation ) {
                     const type = this.optionName( this.options.dateTypes, quotation.dateType );
-                    // preventivo: la data è quella prevista di evasione
-                    const label = quotation.kind === "project" ? "Data" : "Evasione prevista";
-                    return label + ( type ? " ( " + type.toLowerCase() + " )" : "" ) + ": " + this.formatDayLong( quotation.dueDate );
+                    return "Data" + ( type ? " ( " + type.toLowerCase() + " )" : "" ) + ": " + this.formatDayLong( quotation.dueDate );
                 },
 
                 // colonna della data di consegna nell'intervallo visibile ( -1 se fuori )

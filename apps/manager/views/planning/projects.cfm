@@ -42,8 +42,8 @@
                     </select>
                 </div>
                 <div class="col-sm-4 text-end text-muted small">
-                    Per ogni attività: ore stimate ( si pianificano nel <a href="/manager/planning/gantt">Gantt</a> sulle persone con la
-                    tipologia corrispondente, solo se il progetto è In corso ) e budget in euro, facoltativo.
+                    Per ogni attività: ore stimate ( si pianificano nel <a href="/manager/planning/gantt">Calendario</a> sulle persone con la
+                    tipologia corrispondente, solo se il progetto è In corso o Da programmare ) e budget in euro, facoltativo.
                     <div class="pp-legend mt-1">
                         Sotto ogni attività le ore già pianificate:
                         <span class="pp-planned">pianificate</span>
@@ -71,18 +71,19 @@
                     <button type="button" class="btn btn-default" @click="newProject.open = false">Annulla</button>
                 </div>
                 <div class="col-12 small text-muted">
-                    Il progetto compare nel Gantt come un preventivo, con ore stimate e budget propri. Puoi collegargli
-                    uno o più preventivi: un preventivo collegato non compare più da solo nel Gantt e i suoi blocchi
+                    Il progetto compare nel Calendario come un preventivo, con ore stimate e budget propri. Puoi collegargli
+                    uno o più preventivi: un preventivo collegato non compare più da solo nel Calendario e i suoi blocchi
                     già pianificati passano al progetto.
                 </div>
             </form>
 
-            <div class="table-responsive">
+            <!--- pp-table-wrap: contiene anche l'overlay "salvato" delle righe ( flashSaved ) --->
+            <div class="table-responsive pp-table-wrap" ref="tableWrap">
                 <table class="table table-sm table-hover align-middle planning-projects-table">
                     <thead>
                         <tr>
                             <th>Preventivo / progetto</th>
-                            <th class="pp-planning-col" title="Si assegnano persone nel Gantt solo ai progetti In corso">Pianificazione</th>
+                            <th class="pp-planning-col" title="Si assegnano persone nel Calendario solo ai progetti In corso o Da programmare">Pianificazione</th>
                             <th v-for="type in workTypes" :key="type.id" class="text-center pp-hours-col">
                                 <span class="pp-dot" :style="{ backgroundColor: type.color }"></span>{{ type.activity }}
                             </th>
@@ -91,7 +92,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="project in filteredProjects" :key="project.id" :class="{ 'pp-completed': project.planning.statusId === 'CLS' }">
+                        <tr v-for="project in filteredProjects" :key="project.id" :data-project-id="project.id" :class="{ 'pp-completed': project.planning.statusId === 'CLS' }">
                             <td v-if="project.kind === 'project'" class="pp-project-cell">
                                 <!--- progetto: nome e rif. libero, preventivi collegati --->
                                 <template v-if="!project.editing">
@@ -158,18 +159,17 @@
                                     <option v-for="priority in options.priorities" :key="priority.id" :value="priority.id">{{ priority.name }}</option>
                                 </select>
                                 <div class="d-flex gap-1 mt-1">
-                                    <!--- progetto: data modificabile; preventivo: la data prevista evasione, si cambia nella testata del preventivo --->
-                                    <input v-if="project.kind === 'project'" type="date" class="form-control form-control-sm" v-model="project.planning.dueDate" @change="save( project )" title="Data">
-                                    <span v-else class="form-control form-control-sm pp-due-readonly" title="Data prevista evasione del preventivo: si modifica nella testata del preventivo">
-                                        {{ formatDate( project.planning.dueDate ) || "evasione: —" }}
-                                    </span>
+                                    <input type="date" class="form-control form-control-sm" v-model="project.planning.dueDate" @change="save( project )" title="Data">
                                     <select class="form-select form-select-sm pp-date-type" v-model="project.planning.dateType" @change="save( project )" title="Tipo di data">
                                         <option value="">-- tipo</option>
                                         <option v-for="type in options.dateTypes" :key="type.id" :value="type.id">{{ type.name }}</option>
                                     </select>
                                 </div>
+                                <!--- preventivo: la data prevista evasione, per confronto ( si cambia nella testata del preventivo ) --->
+                                <div v-if="project.kind !== 'project' && project.deliveryDate" class="small text-muted mt-1"
+                                     title="Data prevista evasione del preventivo">Evasione prevista: {{ formatDate( project.deliveryDate ) }}</div>
                                 <textarea class="form-control form-control-sm mt-1 pp-note" rows="2" maxlength="4000"
-                                          v-model="project.planning.note" @change="save( project )" placeholder="Note ( visibili nel Gantt )"></textarea>
+                                          v-model="project.planning.note" @change="save( project )" placeholder="Note ( visibili nel Calendario )"></textarea>
                             </td>
                             <td v-for="type in workTypes" :key="type.id" class="text-center">
                                 <div class="pp-input-group" title="Ore stimate">
@@ -190,19 +190,19 @@
                                 <!--- riga di altezza fissa: gli input restano allineati anche senza ore pianificate --->
                                 <div class="pp-planned-line">
                                     <span v-if="planned( project, type.id ) > 0" class="pp-planned" :class="plannedClass( project, type.id )"
-                                          title="Ore già pianificate nel Gantt">{{ format( planned( project, type.id ) ) }} h</span>
+                                          title="Ore già pianificate nel Calendario">{{ format( planned( project, type.id ) ) }} h</span>
                                     <span v-if="extra( project, type.id ) > 0" class="pp-planned extra"
                                           title="Ore extra pianificate, oltre la stima">+{{ format( extra( project, type.id ) ) }}</span>
                                 </div>
                             </td>
                             <td class="text-end">
                                 <strong>{{ format( total( project ) ) }} h</strong>
-                                <div class="small text-muted" title="Ore già pianificate nel Gantt">{{ format( totalPlanned( project ) ) }} h pianificate</div>
+                                <div class="small text-muted" title="Ore già pianificate nel Calendario">{{ format( totalPlanned( project ) ) }} h pianificate</div>
                                 <div class="small" v-if="totalBudget( project ) !== null">{{ formatMoney( totalBudget( project ) ) }}</div>
                             </td>
                             <td class="text-center">
+                                <!--- salvataggio in corso; a salvataggio riuscito l'overlay sulla riga ( flashSaved ) --->
                                 <i v-if="project.saving" class="fas fa-spinner fa-spin text-muted"></i>
-                                <i v-else-if="project.saved" class="fas fa-check text-success"></i>
                             </td>
                         </tr>
                         <tr v-if="!loading && !filteredProjects.length">
@@ -238,7 +238,6 @@
     .pp-planning-col, .pp-planning-cell { width: 230px; min-width: 230px; }
     .pp-date-type { width: 105px; flex: none; }
     .pp-note { font-size: 12px; resize: vertical; }
-    .pp-due-readonly { background: ##f1f3f5; color: ##495057; white-space: nowrap; overflow: hidden; cursor: default; }
     .pp-status { font-weight: 600; }
     .pp-status-COR { color: ##2b8a3e; border-color: ##8ce99a; }
     .pp-status-DAP { color: ##1971c2; border-color: ##a5d8ff; }
@@ -258,5 +257,10 @@
     .pp-link-result { padding: 5px 8px; font-size: 12px; cursor: pointer; border-bottom: 1px solid ##f1f3f5; }
     .pp-link-result:hover { background: ##f1f6ff; }
     .pp-link-result.disabled { cursor: default; opacity: .6; background: ##fff; }
+    /* riga salvata: overlay verde su tutta la riga, spunta al centro della parte visibile */
+    .pp-table-wrap { position: relative; }
+    .pp-saved-overlay { position: absolute; z-index: 5; pointer-events: none; background: rgba( 47, 158, 68, .16 ); animation: pp-saved-fade 2.5s ease-out forwards; }
+    .pp-saved-check { position: absolute; top: 50%; transform: translate( -50%, -50% ); width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 20px; color: ##fff; background: ##2f9e44; border-radius: 50%; box-shadow: 0 2px 8px rgba( 0, 0, 0, .2 ); }
+    @keyframes pp-saved-fade { 0%, 45% { opacity: 1; } 100% { opacity: 0; } }
 </style>
 </cfoutput>

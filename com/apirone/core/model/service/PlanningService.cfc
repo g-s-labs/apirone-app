@@ -182,7 +182,8 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	 * del preventivo; vuoto per i progetti ), ore stimate e pianificate per tipo
 	 * ( hours: { MON: { estimated, budget, planned, extra }, ... } ) e la
 	 * pianificazione ( planningFields: stato, data con tipo, priorità, note;
-	 * completed = concluso, assignable = si possono assegnare persone ). L'id di
+	 * completed = concluso, assignable = si possono assegnare persone: in corso
+	 * e da programmare ). L'id di
 	 * una voce è quello che i blocchi riportano in quotationId.
 	 */
 	public Array function plannableItems(){
@@ -252,8 +253,8 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	/**
 	 * Pianificazione di una voce, come arriva dalla pagina Ore progetti:
 	 * { statusId, dueDate ( yyyy-mm-dd o vuota ), dateType, priority, note }.
-	 * dueDate vale solo per i progetti: per i preventivi la data è quella
-	 * prevista di evasione e saveQuotationPlanning non la salva.
+	 * La data è della pianificazione, anche per i preventivi ( la "data
+	 * prevista evasione" del preventivo resta a parte, in sola lettura ).
 	 * Restituisce i valori puliti; un valore non previsto è un errore.
 	 */
 	private Struct function checkPlanning( required Struct planning ){
@@ -285,15 +286,19 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
 	/**
 	 * Campi di pianificazione di una voce dalla riga del DAO ( planning_status_id,
-	 * due_date, date_type, priority, planning_note ).
+	 * due_date, date_type, priority, planning_note, created_at; per i preventivi
+	 * anche delivery_date, la "data prevista evasione" ). createdAt serve a
+	 * ordinare preventivi e progetti insieme, dal più recente.
 	 */
 	private Struct function planningFields( required Struct row ){
 		var statusId = arguments.row.planning_status_id ?: "DAP";
 		return {
 			"planningStatusId" = statusId,
 			"completed"        = statusId == "CLS",
-			"assignable"       = statusId == "COR",
+			"assignable"       = statusId == "COR" || statusId == "DAP",
 			"dueDate"          = IsDate( arguments.row.due_date ?: "" ) ? DateFormat( arguments.row.due_date, "yyyy-mm-dd" ) : "",
+			"deliveryDate"     = IsDate( arguments.row.delivery_date ?: "" ) ? DateFormat( arguments.row.delivery_date, "yyyy-mm-dd" ) : "",
+			"createdAt"        = IsDate( arguments.row.created_at ?: "" ) ? DateTimeFormat( arguments.row.created_at, "yyyy-mm-dd HH:nn:ss" ) : "",
 			"dateType"         = arguments.row.date_type ?: "",
 			"priority"         = arguments.row.priority ?: "",
 			"note"             = arguments.row.planning_note ?: ""
@@ -670,6 +675,9 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 					"forceHolidays" = row.force_holidays ? true : false,
 					"note"          = row.note ?: "",
 					"extra"         = row.extra ? true : false,
+					"locked"        = IsDate( row.locked_at ?: "" ),
+					"lockedBy"      = row.locked_by_name ?: "",
+					"lockedAt"      = IsDate( row.locked_at ?: "" ) ? DateTimeFormat( row.locked_at, "dd/mm/yyyy HH:nn" ) : "",
 					"days"          = [],
 					"total"         = 0
 				};
@@ -780,7 +788,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	 * mantenendo le ore di ciascun giorno.
 	 */
 	public void function moveBlock( required Numeric blockId, required Date start, String userId = "" ){
-		var block        = loadBlock( arguments.blockId );
+		var block        = loadBlock( arguments.blockId, true );
 		var targetUserId = Len( arguments.userId ) ? arguments.userId : block.userId;
 		var person       = loadPerson( targetUserId );
 		checkWorkType( person, block.workTypeId );
@@ -820,7 +828,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	 * giorni lavorabili tra inizio e fine, in proporzione alla capacità.
 	 */
 	public void function resizeBlock( required Numeric blockId, required Date end ){
-		var block  = loadBlock( arguments.blockId );
+		var block  = loadBlock( arguments.blockId, true );
 		var person = loadPerson( block.userId );
 		var start  = ParseDateTime( block.days[ 1 ].day );
 		var lastDay = DateCompare( arguments.end, start, "d" ) < 0 ? start : arguments.end;
@@ -875,7 +883,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	 * si spezza: il secondo pezzo parte dove finisce il primo.
 	 */
 	public Numeric function splitBlock( required Numeric blockId ){
-		var block = loadBlock( arguments.blockId );
+		var block = loadBlock( arguments.blockId, true );
 		var total = blockTotal( block );
 
 		if ( total < 1 ) {
@@ -924,6 +932,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	}
 
 	public void function deleteBlock( required Numeric blockId ){
+		loadBlock( arguments.blockId, true );
 		getDao().deleteBlock( arguments.blockId );
 	}
 
@@ -932,7 +941,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	 * 0 toglie il giorno; un blocco senza giorni si elimina.
 	 */
 	public void function setDayHours( required Numeric blockId, required Date day, required Numeric hours ){
-		var block = loadBlock( arguments.blockId );
+		var block = loadBlock( arguments.blockId, true );
 		var key   = DateFormat( arguments.day, "yyyy-mm-dd" );
 		var value = Min( Max( arguments.hours, 0 ), 24 );
 
@@ -964,7 +973,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	 * dalla data di inizio sulla capacità libera.
 	 */
 	public void function setBlockFlags( required Numeric blockId, required Boolean useSaturday, required Boolean forceHolidays ){
-		var block  = loadBlock( arguments.blockId );
+		var block  = loadBlock( arguments.blockId, true );
 		var person = loadPerson( block.userId );
 		var days   = distribute(
 			person,
@@ -990,7 +999,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	 * differenza.
 	 */
 	public void function setBlockTimes( required Numeric blockId, String start = "", String end = "" ){
-		var block  = loadBlock( arguments.blockId );
+		var block  = loadBlock( arguments.blockId, true );
 		var person = loadPerson( block.userId );
 		var first  = block.days[ 1 ];
 		var last   = block.days[ block.days.len() ];
@@ -1029,6 +1038,22 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	}
 
 	/**
+	 * Lucchetto: un blocco bloccato non si sposta né si modifica ( date, ore,
+	 * orari, sabati / festivi, divisione, eliminazione; note ed extra sì ).
+	 * Lo mette chiunque, lo toglie solo un ADM.
+	 */
+	public void function setBlockLock( required Numeric blockId, required Boolean locked, required String userId, required Boolean isAdmin ){
+		var block = loadBlock( arguments.blockId );
+		if ( block.locked == arguments.locked ) {
+			return;
+		}
+		if ( !arguments.locked && !arguments.isAdmin ) {
+			Throw( type = "apirone.planning.Locked", message = "Solo un amministratore può togliere il lucchetto." );
+		}
+		getDao().updateBlockLock( block.id, arguments.locked ? arguments.userId : "" );
+	}
+
+	/**
 	 * Nota del blocco ( descrizione facoltativa, es. per le attività "Altro" ).
 	 */
 	public void function setBlockNote( required Numeric blockId, required String note ){
@@ -1059,10 +1084,16 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		};
 	}
 
-	private Struct function loadBlock( required Numeric blockId ){
+	/**
+	 * unlocked: il blocco si sta per spostare / modificare, con il lucchetto è un errore.
+	 */
+	private Struct function loadBlock( required Numeric blockId, Boolean unlocked = false ){
 		var records = getDao().readBlock( arguments.blockId );
 		if ( !records.recordCount ) {
 			Throw( type = "apirone.planning.BlockNotFound", message = "Blocco non trovato: forse è stato eliminato, ricarica la pagina." );
+		}
+		if ( arguments.unlocked && IsDate( records.locked_at[ 1 ] ?: "" ) ) {
+			Throw( type = "apirone.planning.Locked", message = "Il blocco ha il lucchetto: non si può spostare né modificare ( lo toglie un amministratore )." );
 		}
 
 		var block = {
@@ -1075,6 +1106,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			"forceHolidays" = records.force_holidays[ 1 ] ? true : false,
 			"note"          = records.note[ 1 ] ?: "",
 			"extra"         = records.extra[ 1 ] ? true : false,
+			"locked"        = IsDate( records.locked_at[ 1 ] ?: "" ),
 			"days"          = []
 		};
 
@@ -1111,19 +1143,19 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	}
 
 	/**
-	 * Si assegnano persone solo a preventivi / progetti "In corso": "In sospeso"
-	 * e "Da programmare" non si possono ancora quantificare, "Concluso" è chiuso.
+	 * Si assegnano persone a preventivi / progetti "In corso" e "Da programmare":
+	 * non a quelli "In sospeso" né ai "Conclusi".
 	 */
 	private void function checkAssignable( required String itemId ){
 		var statusId = getDao().findPlanningStatus( arguments.itemId );
-		if ( statusId == "COR" ) {
+		if ( statusId == "COR" || statusId == "DAP" ) {
 			return;
 		}
 		var matches = variables.PLANNING_STATUSES.filter( function( item ){ return item.id == statusId; } );
 		Throw(
 			type    = "apirone.planning.NotAssignable",
 			message = "Il progetto è " & LCase( matches.len() ? matches[ 1 ].name : "non pianificabile" )
-				& ": si possono assegnare persone solo ai progetti in corso ( stato in Ore progetti )."
+				& ": si possono assegnare persone solo ai progetti in corso o da programmare ( stato in Ore progetti )."
 		);
 	}
 

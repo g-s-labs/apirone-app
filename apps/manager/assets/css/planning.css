@@ -723,6 +723,44 @@
 	outline-offset: -2px;
 }
 
+/* blocchi con il lucchetto: non si trascinano */
+.pg-bar.locked {
+	cursor: default;
+}
+
+.pg-lock-icon {
+	font-size: 9px;
+	opacity: .85;
+	flex-shrink: 0;
+}
+
+/* "Da pianificare": attività già tutte pianificate ( 0 h ), in secondo piano */
+.pg-backlog-quotation.pg-backlog-done {
+	background: transparent;
+	border-style: dashed;
+}
+
+.pg-chip-done {
+	opacity: .55;
+}
+
+.pg-chip-done:hover {
+	opacity: 1;
+}
+
+/* "+" della persona: nuova attività ex novo */
+.pg-add-activity {
+	margin-left: auto;
+	padding: 0 5px;
+	line-height: 16px;
+	font-size: 10px;
+	opacity: .5;
+}
+
+.pg-row:hover .pg-add-activity {
+	opacity: 1;
+}
+
 /* ---------- legenda ---------- */
 
 .pg-legend {
@@ -786,3 +824,16 @@
 .pg-item-details dt { font-weight: 600; color: #6b7684; }
 .pg-group-title-link { cursor: pointer; }
 .pg-group-title-link:hover { text-decoration: underline; color: #2771e8; }
+
+/* scadenza di preventivo / progetto: entro 30 giorni giallo tenue, scaduto rosso tenue */
+.pg-group-row.pg-due-soon,
+.pg-group-row.pg-due-soon .pg-group-label { background: #fff9db; }
+.pg-group-row.pg-due-overdue,
+.pg-group-row.pg-due-overdue .pg-group-label { background: #fff0f0; }
+.pg-backlog-quotation.pg-due-soon { background: #fff9db; border-color: #ffe066; }
+.pg-backlog-quotation.pg-due-overdue { background: #fff0f0; border-color: #ffc9c9; }
+.pg-due-alert { margin: 0 2px; }
+.pg-due-soon .pg-due-alert { color: #f08c00; }
+.pg-due-overdue .pg-due-alert { color: #e03131; }
+.pg-legend-box.pg-legend-soon { background: #fff9db; border-color: #ffe066; }
+.pg-legend-box.pg-legend-overdue { background: #fff0f0; border-color: #ffc9c9; }

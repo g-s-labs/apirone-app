@@ -59,7 +59,7 @@
                     </select>
                 </div>
                 <div class="col-sm-5 text-end text-muted small">
-                    Costo = ore pianificate nel <a href="/manager/planning/gantt">Gantt</a> × costo orario della persona
+                    Costo = ore pianificate nel <a href="/manager/planning/gantt">Calendario</a> × costo orario della persona
                     ( <a href="/manager/planning/people">Disponibilità persone</a> ) in vigore quel giorno.
                     Budget da <a href="/manager/planning/projects">Ore progetti</a>.
                 </div>

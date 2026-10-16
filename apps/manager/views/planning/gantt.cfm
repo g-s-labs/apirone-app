@@ -2,7 +2,7 @@
 <!---
     PLANNING/GANTT.CFM
     ==================
-    Gantt della pianificazione: persone sui preventivi attivi ( qualunque stato
+    Calendario ( Gantt ) della pianificazione: persone sui preventivi attivi ( qualunque stato
     tranne Perso ed Estinto ) e sui progetti. App Vue 2 montata su ##planning-gantt-app ( logica in
     app-planning-gantt.js, stile in css/planning.css ).
 
@@ -11,7 +11,7 @@
     - Raggruppamento per Persone ( righe per tipo di lavoro, barre con il numero
       del preventivo ) o per Preventivi ( righe per tipo di attività, barre con il
       nome della persona ). I colori sono solo dei tipi di attività.
-    - Colonna "Da pianificare": ore stimate non ancora pianificate.
+    - Colonna "Da pianificare": ore stimate, prima quelle non ancora pianificate.
 --->
 <script src="/assets/#prc.staticVersion#/main/js/vue2.js"></script>
 
@@ -62,16 +62,22 @@
                     <a href="/manager/planning/projects">Ore progetti</a>.
                 </div>
 
-                <div v-for="item in backlog" :key="item.quotation.id" class="pg-backlog-quotation">
+                <div v-for="item in backlog" :key="item.quotation.id" class="pg-backlog-quotation"
+                     :class="[ { 'pg-backlog-done': !item.remaining }, dueState( item.quotation ) ? 'pg-due-' + dueState( item.quotation ) : '' ]">
                     <div class="pg-backlog-quotation-title">
                         <!--- preventivo: link alla pagina; progetto: il nome ( si gestisce in Ore progetti ) --->
                         <i class="fas text-muted" :class="item.quotation.kind === 'project' ? 'fa-folder-open' : 'fa-file-invoice'"></i>
+                        <!--- scaduto / in scadenza entro 30 giorni --->
+                        <i v-if="dueState( item.quotation )" class="fas pg-due-alert"
+                           :class="dueState( item.quotation ) === 'overdue' ? 'fa-exclamation-circle' : 'fa-exclamation-triangle'"
+                           :title="dueStateTitle( item.quotation )"></i>
                         <a v-if="item.quotation.url" :href="item.quotation.url" target="_blank">{{ quotationLabel( item.quotation ) }}</a>
                         <a v-else href="/manager/planning/projects" target="_blank" title="Progetto: si gestisce in Ore progetti">{{ quotationLabel( item.quotation ) }}</a>
                     </div>
                     <div class="pg-backlog-customer" v-if="itemSubtitle( item.quotation )">{{ itemSubtitle( item.quotation ) }}</div>
                     <!--- priorità, data con tipo, note ( dettagli al clic ) --->
-                    <div class="pg-item-meta" v-if="item.quotation.priority || item.quotation.dueDate || item.quotation.note">
+                    <div class="pg-item-meta" v-if="item.quotation.planningStatusId !== 'COR' || item.quotation.priority || item.quotation.dueDate || item.quotation.note">
+                        <span v-if="item.quotation.planningStatusId !== 'COR'" class="pg-planning-status">{{ optionName( options.statuses, item.quotation.planningStatusId ) }}</span>
                         <span v-if="item.quotation.priority" class="pg-priority" :class="'pg-priority-' + item.quotation.priority"
                               :title="optionName( options.priorities, item.quotation.priority )">{{ item.quotation.priority }}</span>
                         <span v-if="item.quotation.dueDate" class="pg-due" :class="{ tassativa: item.quotation.dateType === 'TAS' }"
@@ -80,14 +86,17 @@
                             <i class="fas fa-sticky-note"></i> note
                         </a>
                     </div>
-                    <!--- riquadri da trascinare su una persona del tipo giusto, nel giorno di inizio --->
+                    <!--- riquadri da trascinare su una persona del tipo giusto, nel giorno di inizio;
+                          a 0 h ( tutto pianificato ) si trascinano per aggiungere ore extra --->
                     <div class="pg-backlog-chips">
                         <span v-for="chip in item.chips" :key="chip.workTypeId" class="pg-chip pg-chip-draggable"
+                              :class="{ 'pg-chip-done': !chip.remaining }"
                               draggable="true"
                               @dragstart="startBacklogDrag( $event, item.quotation, chip )"
                               @dragend="endBacklogDrag"
                               :style="{ borderColor: workType( chip.workTypeId ).color }"
-                              :title="workType( chip.workTypeId ).activity + ': ' + format( chip.planned ) + ' h pianificate su ' + format( chip.estimated ) + ' h. Trascina su una persona per pianificare.'">
+                              :title="workType( chip.workTypeId ).activity + ': ' + format( chip.planned ) + ' h pianificate su ' + format( chip.estimated ) + ' h. '
+                                  + ( chip.remaining ? 'Trascina su una persona per pianificare.' : 'Tutto pianificato: trascina su una persona per aggiungere ore extra.' )">
                             <span class="pg-chip-dot" :style="{ backgroundColor: workType( chip.workTypeId ).color }"></span>
                             {{ workType( chip.workTypeId ).activity }}
                             <strong>{{ format( chip.remaining ) }} h</strong>
@@ -126,11 +135,16 @@
 
                     <!--- righe --->
                     <template v-for="group in rowGroups">
-                        <div class="pg-group-row" :key="'g-' + group.key" @click="toggleGroup( group.key )">
+                        <div class="pg-group-row" :key="'g-' + group.key" @click="toggleGroup( group.key )"
+                             :class="dueState( group.item ) ? 'pg-due-' + dueState( group.item ) : ''">
                             <div class="pg-label pg-group-label" :style="{ width: labelWidth + 'px' }">
                                 <i class="fas" :class="collapsedGroups[ group.key ] ? 'fa-caret-right' : 'fa-caret-down'"></i>
                                 <span v-if="group.color" class="pg-swatch" :style="{ backgroundColor: group.color }"></span>
                                 <i v-else class="fas text-muted" :class="group.project ? 'fa-folder-open' : 'fa-file-invoice'"></i>
+                                <!--- scaduto / in scadenza entro 30 giorni --->
+                                <i v-if="dueState( group.item )" class="fas pg-due-alert"
+                                   :class="dueState( group.item ) === 'overdue' ? 'fa-exclamation-circle' : 'fa-exclamation-triangle'"
+                                   :title="dueStateTitle( group.item )"></i>
                                 <!--- clic sul nome del preventivo / progetto: dettagli e note ( sul resto della riga: apri / chiudi ) --->
                                 <span class="pg-group-title" :class="{ 'pg-group-title-link': group.item }"
                                       @click="group.item && ( $event.stopPropagation(), openItemInfo( group.item ) )"
@@ -139,8 +153,8 @@
                                 <template v-if="group.item">
                                     <span v-if="group.item.priority" class="pg-priority" :class="'pg-priority-' + group.item.priority"
                                           :title="optionName( options.priorities, group.item.priority )">{{ group.item.priority }}</span>
-                                    <span v-if="!group.item.assignable" class="pg-planning-status"
-                                          title="Non si possono assegnare persone: cambia lo stato in Ore progetti">{{ optionName( options.statuses, group.item.planningStatusId ) }}</span>
+                                    <span v-if="group.item.planningStatusId !== 'COR'" class="pg-planning-status"
+                                          :title="group.item.assignable ? 'Stato in Ore progetti' : 'Non si possono assegnare persone: cambia lo stato in Ore progetti'">{{ optionName( options.statuses, group.item.planningStatusId ) }}</span>
                                     <span v-if="group.item.dueDate" class="pg-due" :class="{ tassativa: group.item.dateType === 'TAS' }"
                                           :title="dueTitle( group.item )"><i class="far fa-calendar"></i> {{ formatDay( group.item.dueDate ) }}</span>
                                     <i class="fas pg-info-icon" :class="group.item.note ? 'fa-sticky-note has-note' : 'fa-info-circle'"
@@ -174,6 +188,10 @@
                                         <span v-if="row.dotColor" class="pg-chip-dot" :style="{ backgroundColor: row.dotColor }"></span>
                                         {{ row.title }}
                                         <i v-if="row.person && !row.person.active" class="fas fa-user-slash pg-no-access" title="Senza accesso all'app"></i>
+                                        <!--- nuova attività ex novo ( come trascinare il nome su un giorno ) --->
+                                        <button v-if="row.person" type="button" class="btn btn-default btn-xs pg-add-activity"
+                                                @click.stop="openExtraFor( row.person )" @pointerdown.stop draggable="false"
+                                                title="Nuova attività ( es. ore extra )"><i class="fas fa-plus"></i></button>
                                     </div>
                                     <div class="pg-label-subtitle" v-if="row.subtitle">{{ row.subtitle }}</div>
                                 </div>
@@ -194,7 +212,7 @@
 
                                     <!--- blocchi --->
                                     <div v-for="bar in row.bars" :key="bar.block.id" class="pg-bar"
-                                         :class="{ 'clipped-start': bar.clippedStart, 'clipped-end': bar.clippedEnd, compact: !bar.timed && barCompact( bar ), 'with-days': !bar.timed && showDayHours(), timed: bar.timed, extra: bar.block.extra, selected: isSelected( bar.block ) }"
+                                         :class="{ 'clipped-start': bar.clippedStart, 'clipped-end': bar.clippedEnd, compact: !bar.timed && barCompact( bar ), 'with-days': !bar.timed && showDayHours(), timed: bar.timed, extra: bar.block.extra, locked: bar.block.locked, selected: isSelected( bar.block ) }"
                                          :style="barStyle( bar )"
                                          :title="isSelected( bar.block ) ? '' : barTitle( bar.block )"
                                          @pointerdown="startBarDrag( $event, bar, row )"
@@ -206,6 +224,7 @@
                                                  :class="{ compact: piece.width < 80 }"
                                                  :style="{ left: piece.left + 'px', width: piece.width + 'px', backgroundColor: barColor( bar ) }">
                                                 <div class="pg-bar-top">
+                                                    <i v-if="bar.block.locked" class="fas fa-lock pg-lock-icon"></i>
                                                     <span v-if="bar.block.extra && piece.width >= 80" class="pg-extra-tag">EXTRA</span>
                                                     <span class="pg-bar-label">{{ barMain( bar.block, piece.width < 80 ) }}</span>
                                                     <span v-if="piece.width >= 80" class="pg-bar-hours">{{ format( piece.hours ) }} h</span>
@@ -218,6 +237,7 @@
                                         <template v-else>
                                             <!--- prima riga: sempre il preventivo ( vista Persone ) o la persona ( vista Preventivi ) --->
                                             <div class="pg-bar-top">
+                                                <i v-if="bar.block.locked" class="fas fa-lock pg-lock-icon"></i>
                                                 <span v-if="bar.block.extra && !barCompact( bar )" class="pg-extra-tag">EXTRA</span>
                                                 <span class="pg-bar-label">{{ barMain( bar.block, barCompact( bar ) ) }}</span>
                                                 <span v-if="!barCompact( bar )" class="pg-bar-hours">{{ format( bar.block.total ) }} h</span>
@@ -236,8 +256,8 @@
                                                  :style="{ left: ( gap.left - 2 ) + 'px', width: gap.width + 'px' }"
                                                  title="Giorno non lavorato"></div>
                                         </template>
-                                        <!--- bordo destro: allunga / accorcia --->
-                                        <div v-if="!bar.clippedEnd" class="pg-bar-resize" title="Trascina per allungare o accorciare"
+                                        <!--- bordo destro: allunga / accorcia ( non con il lucchetto ) --->
+                                        <div v-if="!bar.clippedEnd && !bar.block.locked" class="pg-bar-resize" title="Trascina per allungare o accorciare"
                                              @pointerdown.stop="startBarResize( $event, bar )"></div>
                                     </div>
 
@@ -260,14 +280,14 @@
                                             <div class="pg-block-toolbar-times">
                                                 <label>
                                                     Inizio <span class="text-muted">{{ formatDayLong( bar.block.start ) }}</span>
-                                                    <select class="form-select form-select-sm" :value="blockStart( bar.block )"
+                                                    <select class="form-select form-select-sm" :value="blockStart( bar.block )" :disabled="bar.block.locked"
                                                             @change="setBlockTime( bar.block, 'start', $event.target.value )">
                                                         <option v-for="time in timeOptions()" :key="'s' + time" :value="time">{{ time }}</option>
                                                     </select>
                                                 </label>
                                                 <label>
                                                     Fine <span class="text-muted">{{ formatDayLong( bar.block.end ) }}</span>
-                                                    <select class="form-select form-select-sm" :value="blockEnd( bar.block )"
+                                                    <select class="form-select form-select-sm" :value="blockEnd( bar.block )" :disabled="bar.block.locked"
                                                             @change="setBlockTime( bar.block, 'end', $event.target.value )">
                                                         <option v-for="time in timeOptions()" :key="'e' + time" :value="time">{{ time }}</option>
                                                     </select>
@@ -287,16 +307,16 @@
                                                 <button type="button" class="btn btn-default btn-xs" @click="toggleDayEditor" :class="{ active: dayEditor.open }" title="Ore di ogni giorno">
                                                     <i class="fas fa-clock"></i> Ore
                                                 </button>
-                                                <button type="button" class="btn btn-default btn-xs" @click="splitSelected" :disabled="!canSplit( bar.block )"
+                                                <button type="button" class="btn btn-default btn-xs" @click="splitSelected" :disabled="bar.block.locked || !canSplit( bar.block )"
                                                         :title="canSplit( bar.block ) ? 'Dividi in due blocchi: ' + format( splitHours( bar.block )[ 0 ] ) + ' h + ' + format( splitHours( bar.block )[ 1 ] ) + ' h' : 'Servono almeno 1 h per dividere'">
                                                     <i class="fas fa-cut"></i> Dividi
                                                 </button>
                                                 <button type="button" class="btn btn-default btn-xs" :class="{ active: bar.block.useSaturday || bar.block.forceHolidays }"
-                                                        @click="toggleFlag( bar.block, 'useSaturday' )" :disabled="bar.block.forceHolidays" title="Usa anche i sabati">
+                                                        @click="toggleFlag( bar.block, 'useSaturday' )" :disabled="bar.block.locked || bar.block.forceHolidays" title="Usa anche i sabati">
                                                     <i class="fas fa-calendar-week"></i> Sabati
                                                 </button>
                                                 <button type="button" class="btn btn-default btn-xs" :class="{ active: bar.block.forceHolidays }"
-                                                        @click="toggleFlag( bar.block, 'forceHolidays' )" title="Usa anche domeniche e festivi">
+                                                        @click="toggleFlag( bar.block, 'forceHolidays' )" :disabled="bar.block.locked" title="Usa anche domeniche e festivi">
                                                     <i class="fas fa-calendar-plus"></i> Festivi
                                                 </button>
                                                 <button type="button" class="btn btn-default btn-xs" :class="{ active: bar.block.extra }"
@@ -307,7 +327,12 @@
                                                    :title="( quotationsById[ bar.block.quotationId ] || {} ).kind === 'project' ? 'Apri Ore progetti' : 'Apri il preventivo'">
                                                     <i class="fas fa-external-link-alt"></i>
                                                 </a>
-                                                <button type="button" class="btn btn-danger btn-xs" @click="deleteSelected" title="Elimina il blocco">
+                                                <!--- lucchetto: lo mette chiunque, lo toglie solo un ADM --->
+                                                <button type="button" class="btn btn-default btn-xs" :class="{ active: bar.block.locked }"
+                                                        @click="toggleLock( bar.block )" :disabled="!canToggleLock( bar.block )" :title="lockTitle( bar.block )">
+                                                    <i class="fas" :class="bar.block.locked ? 'fa-lock' : 'fa-lock-open'"></i> {{ bar.block.locked ? 'Bloccato' : 'Blocca' }}
+                                                </button>
+                                                <button type="button" class="btn btn-danger btn-xs" @click="deleteSelected" :disabled="bar.block.locked" title="Elimina il blocco">
                                                     <i class="fas fa-trash"></i>
                                                 </button>
                                                 <button type="button" class="btn btn-default btn-xs" @click="clearSelection" title="Chiudi">
@@ -321,7 +346,7 @@
                                                      :class="{ current: selected.day === day.day }">
                                                     <span class="pg-day-editor-label">{{ formatDayLong( day.day ) }}</span>
                                                     <input type="number" min="0" max="24" step="0.5" class="form-control form-control-sm"
-                                                           :value="day.hours" @change="setDayHours( bar.block, day.day, $event.target.value )"
+                                                           :disabled="bar.block.locked" :value="day.hours" @change="setDayHours( bar.block, day.day, $event.target.value )"
                                                            :ref="'dayInput-' + day.day">
                                                     <span>h</span>
                                                 </div>
@@ -345,7 +370,7 @@
                             <a href="/manager/planning/people">Disponibilità persone</a>.
                         </template>
                         <template v-else>
-                            Nessun preventivo da pianificare ( si escludono i persi, gli estinti e i conclusi ).
+                            Nessun preventivo in corso o da programmare ( si escludono i persi, gli estinti, i conclusi e i sospesi ).
                         </template>
                     </div>
 
@@ -371,7 +396,7 @@
                                 <dd class="col-8">{{ optionName( options.statuses, itemInfo.planningStatusId ) }}</dd>
                                 <dt class="col-4">Priorità</dt>
                                 <dd class="col-8">{{ optionName( options.priorities, itemInfo.priority ) || "—" }}</dd>
-                                <dt class="col-4">{{ itemInfo.kind === 'project' ? 'Data' : 'Data prevista evasione' }}</dt>
+                                <dt class="col-4">Data</dt>
                                 <dd class="col-8">
                                     <template v-if="itemInfo.dueDate">
                                         {{ formatDayLong( itemInfo.dueDate ) }}
@@ -379,6 +404,10 @@
                                     </template>
                                     <template v-else>—</template>
                                 </dd>
+                                <template v-if="itemInfo.kind !== 'project'">
+                                    <dt class="col-4">Evasione prevista</dt>
+                                    <dd class="col-8">{{ itemInfo.deliveryDate ? formatDayLong( itemInfo.deliveryDate ) : "—" }}</dd>
+                                </template>
                             </dl>
                             <label class="form-label fw-bold mb-1">Note</label>
                             <div class="pg-item-note" v-if="itemInfo.note">{{ itemInfo.note }}</div>
@@ -404,9 +433,16 @@
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
                         </header>
                         <div class="card-body" v-if="extraForm.person">
-                            <p class="mb-3">
-                                <strong>{{ extraForm.person.name }}</strong>, <span class="text-capitalize">{{ extraForm.dayLabel }}</span>
-                            </p>
+                            <div class="row g-2 mb-2 align-items-end">
+                                <div class="col-6">
+                                    <label class="col-form-label">Persona</label>
+                                    <div class="form-control-plaintext fw-bold">{{ extraForm.person.name }}</div>
+                                </div>
+                                <div class="col-6">
+                                    <label class="col-form-label">Giorno <span v-if="extraDayNote()" class="text-muted">( {{ extraDayNote().toLowerCase() }} )</span></label>
+                                    <input type="date" class="form-control" v-model="extraForm.day">
+                                </div>
+                            </div>
 
                             <div class="mb-2">
                                 <label class="col-form-label">Progetto</label>
@@ -465,6 +501,9 @@
                 <span><span class="pg-legend-box today"></span> Oggi</span>
                 <span><span class="pg-legend-load"></span> Ore pianificate sulla disponibilità</span>
                 <span><span class="pg-legend-load over"></span> Oltre la disponibilità</span>
+                <span><span class="pg-legend-box pg-legend-soon"></span> Scade entro 30 giorni</span>
+                <span><span class="pg-legend-box pg-legend-overdue"></span> Scaduto</span>
+                <span><i class="fas fa-lock"></i> Con lucchetto</span>
             </div>
         </div>
 

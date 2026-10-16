@@ -51,10 +51,12 @@ component extends="com.apirone.core.controller.AbsController" {
 	 * Gantt: persone sui preventivi e progetti in corso.
 	 */
 	function gantt( event, rc, prc ){
-		prc.title = "Gantt";
+		prc.title = "Calendario";
 
 		prc.page[ "workTypes" ]       = super.service( "Planning" ).workTypes();
 		prc.page[ "planningOptions" ] = super.service( "Planning" ).planningOptions();
+		// il lucchetto dei blocchi lo toglie solo un ADM
+		prc.page[ "isAdmin" ]         = !IsNull( session.user.getRole() ) && session.user.getRole().getId() == "ADM";
 
 		prc.jsFiles.add( "app-planning-gantt" );
 		prc.cssFiles.add( "planning" );

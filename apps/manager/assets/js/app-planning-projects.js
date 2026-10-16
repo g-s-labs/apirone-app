@@ -56,9 +56,10 @@ AP.planningProjects = ( function() {
             },
 
             methods: {
+                // promessa della richiesta: dopo un'operazione che ricarica l'elenco
                 load: function() {
                     this.loading = true;
-                    NM.util.ajax( {
+                    return NM.util.ajax( {
                         method: "GET",
                         url: BASE + "/projects",
                         callback: {
@@ -84,7 +85,6 @@ AP.planningProjects = ( function() {
                                         form: form,
                                         budgets: budgets,
                                         saving: false,
-                                        saved: false,
                                         // solo progetti: modifica di nome / rif. libero e ricerca dei preventivi da collegare
                                         quotations: project.quotations || [],
                                         planning: {
@@ -105,6 +105,7 @@ AP.planningProjects = ( function() {
                 },
 
                 save: function( project ) {
+                    const vm = this;
                     const hours = {};
                     const budgets = {};
                     this.workTypes.forEach( function( type ) {
@@ -114,7 +115,6 @@ AP.planningProjects = ( function() {
                     } );
 
                     project.saving = true;
-                    project.saved = false;
 
                     return new Promise( ( resolve ) => {
                         NM.util.ajax( {
@@ -130,13 +130,48 @@ AP.planningProjects = ( function() {
                                         resolve( false );
                                         return;
                                     }
-                                    project.saved = true;
-                                    setTimeout( function() { project.saved = false; }, 1500 );
+                                    vm.flashSaved( project );
                                     resolve( true );
                                 },
                             },
                         } ).always( function() { project.saving = false; } );
                     } );
+                },
+
+                /*
+                    Conferma del salvataggio ben visibile anche su righe lunghe: overlay
+                    verde su tutta la riga con la spunta al centro della parte visibile
+                    ( tabella e finestra ), che sparisce con una dissolvenza ( CSS ).
+                */
+                flashSaved: function( project ) {
+                    const wrap = this.$refs.tableWrap;
+                    const row = wrap && wrap.querySelector( 'tr[data-project-id="' + project.id + '"]' );
+                    if ( !row ) return;
+
+                    const previous = wrap.querySelector( '.pp-saved-overlay[data-project-id="' + project.id + '"]' );
+                    if ( previous ) previous.remove();
+
+                    const wrapRect = wrap.getBoundingClientRect();
+                    const rowRect = row.getBoundingClientRect();
+                    const visibleLeft = Math.max( rowRect.left, wrapRect.left, 0 );
+                    const visibleRight = Math.min( rowRect.right, wrapRect.right, window.innerWidth );
+
+                    const overlay = document.createElement( "div" );
+                    overlay.className = "pp-saved-overlay";
+                    overlay.dataset.projectId = project.id;
+                    overlay.style.left = ( rowRect.left - wrapRect.left + wrap.scrollLeft ) + "px";
+                    overlay.style.top = ( rowRect.top - wrapRect.top + wrap.scrollTop ) + "px";
+                    overlay.style.width = rowRect.width + "px";
+                    overlay.style.height = rowRect.height + "px";
+
+                    const check = document.createElement( "div" );
+                    check.className = "pp-saved-check";
+                    check.innerHTML = '<i class="fas fa-check"></i>';
+                    check.style.left = ( ( visibleLeft + visibleRight ) / 2 - rowRect.left ) + "px";
+                    overlay.appendChild( check );
+
+                    overlay.addEventListener( "animationend", function() { overlay.remove(); } );
+                    wrap.appendChild( overlay );
                 },
 
                 // cambio di stato: si salva e si spiega cosa cambia nel Gantt
@@ -145,10 +180,10 @@ AP.planningProjects = ( function() {
                     if ( !saved ) return;
                     const label = project.kind === "project" ? project.name : project.label;
                     const messages = {
-                        COR: "è in corso: nel Gantt si possono assegnare le persone.",
-                        CLS: "è concluso: non compare più nel Gantt.",
-                        SOS: "è in sospeso: nel Gantt non si possono assegnare persone.",
-                        DAP: "è da programmare: nel Gantt non si possono assegnare persone.",
+                        COR: "è in corso: nel Calendario si possono assegnare le persone.",
+                        CLS: "è concluso: non compare più nel Calendario.",
+                        SOS: "è in sospeso: nel Calendario non si possono assegnare persone.",
+                        DAP: "è da programmare: nel Calendario si possono assegnare le persone.",
                     };
                     AP.widget.notify( "success", label + " " + ( messages[ project.planning.statusId ] || "salvato." ) );
                 },
@@ -182,6 +217,8 @@ AP.planningProjects = ( function() {
                         project.label = project.name;
                         project.rifLibero = project.edit.rifLibero.trim();
                         project.editing = false;
+                        // la riga cambia altezza chiudendo il modulo: overlay dopo il ridisegno
+                        this.$nextTick( () => this.flashSaved( project ) );
                     } );
                 },
 
@@ -189,7 +226,7 @@ AP.planningProjects = ( function() {
                     bootbox.confirm( {
                         title: "Elimina progetto",
                         message: "Eliminare il progetto \"" + project.name + "\"? Le sue ore stimate si perdono e i preventivi collegati"
-                            + " tornano nel Gantt da soli. Un progetto con blocchi pianificati non si può eliminare.",
+                            + " tornano nel Calendario da soli. Un progetto con blocchi pianificati non si può eliminare.",
                         buttons: {
                             confirm: { label: "Elimina", className: "btn-danger" },
                             cancel: { label: "Annulla", className: "btn-default" },
@@ -236,8 +273,8 @@ AP.planningProjects = ( function() {
 
                 linkQuotation: function( project, quotation ) {
                     this.call( "POST", BASE + "/projects/" + project.id + "/quotations", { quotationId: quotation.id }, () => {
-                        AP.widget.notify( "success", "Preventivo " + quotation.label + " collegato: nel Gantt è ora sotto il progetto." );
-                        this.load();
+                        AP.widget.notify( "success", "Preventivo " + quotation.label + " collegato: nel Calendario è ora sotto il progetto." );
+                        this.reloadAndFlash( project );
                     } );
                 },
 
@@ -245,7 +282,7 @@ AP.planningProjects = ( function() {
                     bootbox.confirm( {
                         title: "Scollega preventivo",
                         message: "Scollegare il preventivo " + quotation.label + " dal progetto \"" + project.name + "\"?"
-                            + " Torna nel Gantt da solo; i blocchi già pianificati restano al progetto.",
+                            + " Torna nel Calendario da solo; i blocchi già pianificati restano al progetto.",
                         buttons: {
                             confirm: { label: "Scollega", className: "btn-warning" },
                             cancel: { label: "Annulla", className: "btn-default" },
@@ -253,10 +290,15 @@ AP.planningProjects = ( function() {
                         callback: ( confirmed ) => {
                             if ( !confirmed ) return;
                             this.call( "DELETE", BASE + "/projects/" + project.id + "/quotations/" + quotation.id, null, () => {
-                                this.load();
+                                this.reloadAndFlash( project );
                             } );
                         },
                     } );
+                },
+
+                // dopo il ricaricamento la riga è un oggetto nuovo: l'overlay la cerca per id
+                reloadAndFlash: function( project ) {
+                    this.load().always( () => this.$nextTick( () => this.flashSaved( project ) ) );
                 },
 
                 // chiamata con messaggio d'errore del server ( status ERROR ) e callback di riuscita

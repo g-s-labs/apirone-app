@@ -158,6 +158,22 @@ component extends="com.apirone.core.controller.AbsController" {
 		} );
 	}
 
+	/**
+	 * Lucchetto del blocco ( locked ): lo mette chiunque, lo toglie solo un ADM.
+	 */
+	function setBlockLock( event, rc, prc ){
+		var json = DeserializeJSON( GetHTTPRequestData().content );
+
+		blockAction( event, function( service ){
+			service.setBlockLock(
+				blockId = Val( rc.id ),
+				locked  = IsBoolean( json.locked ?: "" ) && json.locked,
+				userId  = session.user.getId(),
+				isAdmin = !IsNull( session.user.getRole() ) && session.user.getRole().getId() == "ADM"
+			);
+		} );
+	}
+
 	function deleteBlock( event, rc, prc ){
 		blockAction( event, function( service ){
 			service.deleteBlock( Val( rc.id ) );

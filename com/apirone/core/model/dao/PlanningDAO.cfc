@@ -198,8 +198,8 @@
 
 	<!---
 		Pianificazione del preventivo nel Gantt: stato ( COR / CLS / SOS / DAP ),
-		tipo di data ( RIC / TAS; la data è quella prevista di evasione del
-		preventivo, non si salva qui ), priorità ( A / B / C ) e note. completed_at:
+		data con tipo ( RIC / TAS; indipendente dalla "data prevista evasione" del
+		preventivo ), priorità ( A / B / C ) e note. completed_at:
 		quando è stato concluso ( vuoto se non concluso ).
 	--->
 	<cffunction name="saveQuotationPlanning" returntype="void" access="public">
@@ -211,10 +211,11 @@
 		<cfset local.done = local.p.statusId == "CLS">
 
 		<cfquery datasource="apirone">
-			INSERT INTO planning_quotations ( quotation_id, status_id, date_type, priority, note, completed_at, completed_by )
+			INSERT INTO planning_quotations ( quotation_id, status_id, due_date, date_type, priority, note, completed_at, completed_by )
 			VALUES (
 				<cfqueryparam cfsqltype="varchar" value="#arguments.quotationId#">::uuid,
 				<cfqueryparam cfsqltype="varchar" value="#local.p.statusId#">,
+				<cfqueryparam cfsqltype="date" value="#local.p.dueDate#" null="#!IsDate( local.p.dueDate )#">,
 				<cfqueryparam cfsqltype="varchar" value="#local.p.dateType#" null="#!Len( local.p.dateType )#">,
 				<cfqueryparam cfsqltype="varchar" value="#local.p.priority#" null="#!Len( local.p.priority )#">,
 				<cfqueryparam cfsqltype="longvarchar" value="#local.p.note#" null="#!Len( local.p.note )#">,
@@ -223,6 +224,7 @@
 			)
 			ON CONFLICT ( quotation_id ) DO UPDATE SET
 				status_id = EXCLUDED.status_id,
+				due_date = EXCLUDED.due_date,
 				date_type = EXCLUDED.date_type,
 				priority = EXCLUDED.priority,
 				note = EXCLUDED.note,
@@ -268,8 +270,10 @@
 				( #isPlannableSql()# ) AS plannable,
 				<!--- pianificazione: senza riga in planning_quotations "Da programmare" --->
 				COALESCE( pq.status_id, 'DAP' ) AS planning_status_id,
-				<!--- la data è la "data prevista evasione" del preventivo: non si modifica dal Gantt --->
-				q.data_evasione AS due_date,
+				<!--- data della pianificazione; la "data prevista evasione" del preventivo a parte, in sola lettura --->
+				pq.due_date,
+				q.data_evasione AS delivery_date,
+				q.created_at,
 				pq.date_type,
 				pq.priority,
 				pq.note AS planning_note,
@@ -346,6 +350,11 @@
 				b.force_holidays,
 				b.note,
 				b.extra,
+				b.locked_at,
+				( SELECT COALESCE( NULLIF( lu.user_name, '' ), la.account )
+					FROM membership.users lu
+					JOIN membership.accounts la ON la.account_id = lu.account_id
+					WHERE lu.user_id = b.locked_by ) AS locked_by_name,
 				d.day,
 				d.hours,
 				<!--- ora di inizio nel giorno, in minuti; senza: inizio giornata della persona --->
@@ -400,6 +409,7 @@
 				b.force_holidays,
 				b.note,
 				b.extra,
+				b.locked_at,
 				b.start_day,
 				d.day,
 				d.hours,
@@ -498,6 +508,21 @@
 		<cfquery datasource="apirone">
 			UPDATE planning_blocks
 			SET extra = <cfqueryparam cfsqltype="boolean" value="#arguments.extra#">
+			WHERE block_id = <cfqueryparam cfsqltype="integer" value="#arguments.blockId#">
+		</cfquery>
+	</cffunction>
+
+	<!--- Lucchetto: userId vuoto lo toglie --->
+	<cffunction name="updateBlockLock" returntype="void" access="public">
+		<cfargument name="blockId" type="Numeric" required="true">
+		<cfargument name="userId" type="String" default="">
+
+		<cfset local.locked = Len( arguments.userId ) GT 0>
+
+		<cfquery datasource="apirone">
+			UPDATE planning_blocks SET
+				locked_at = <cfif local.locked>NOW()<cfelse>NULL</cfif>,
+				locked_by = <cfqueryparam cfsqltype="varchar" value="#arguments.userId#" null="#!local.locked#">::uuid
 			WHERE block_id = <cfqueryparam cfsqltype="integer" value="#arguments.blockId#">
 		</cfquery>
 	</cffunction>

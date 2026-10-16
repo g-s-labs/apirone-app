@@ -226,7 +226,7 @@
 			{
 				href: "/manager/planning/gantt",
 				icon: "fas fa-stream",
-				title: "Gantt",
+				title: "Calendario",
 				roles: "ADM",
 			},
 			{
