@@ -17,7 +17,8 @@ component extends="com.apirone.core.controller.AbsController" {
 		// Le righe del preventivo si vedono tutte: niente paginazione (paramsFromUrl imposta limit 15 di default)
 		params[ "limit" ]  = -1;
 		params[ "offset" ] = 0;
-		params[ "orderBy" ] = [ { "field" = "quotationItem.ordinamento", "dir" = "asc" }, { "field" = "quotationZonePosition.code", "dir" = "asc" } ];
+		// ordine trascinato ( ordinamento ); se mai riordinate, per posizione ( vedi QuotationItemDAO.find )
+		params[ "orderBy" ] = [ { "field" = "quotationItem.ordinamento", "dir" = "asc" } ];
 		params[ "quotationZoneId" ] = Len( rc.quotationZoneId ) ? rc.quotationZoneId : null;
 
 		var rows = super.fire( "QuotationItem.search", params );

@@ -63,9 +63,16 @@
 						AND product_categories.product_category_type_id = <cfqueryparam cfsqltype="Varchar" value="#arguments.typeId#">
 					</cfif>
 				</cfif>
+			<!---
+				a parità di ordine ( ordinamento 0: righe mai riordinate trascinandole )
+				la posizione in ordine naturale ( A1, A2, A10; collation natural_sort ),
+				senza posizione in fondo, poi l'ordine di inserimento
+			--->
 			ORDER BY
-				#super.sanitizeSQL( arguments.orderBy )#
-				<!--- quotation_zone_positions.code ---->
+				<cfif Len( Trim( super.sanitizeSQL( arguments.orderBy ) ) )>#super.sanitizeSQL( arguments.orderBy )#,</cfif>
+				quotation_zone_positions.code COLLATE natural_sort NULLS LAST,
+				quotation_items.created_at,
+				quotation_items.quotation_item_id
 
 				<cfif arguments.limit GT 0>
 					LIMIT <cfqueryparam value="#arguments.limit#" cfsqltype="integer">
@@ -256,6 +263,67 @@
 				quotation_item_id = <cfqueryparam cfsqltype="Varchar" value="#arguments.quotationItem.getId()#">::uuid
 		</cfquery>
 		<cfreturn arguments.quotationItem.getId()>
+	</cffunction>
+
+	<!---
+		Elenco già ordinato ( ordinamento > 0 ): ordinamento a cui va una riga nuova
+		con posizione code, cioè quello della prima riga ( nell'ordine dell'elenco )
+		con posizione successiva in ordine naturale ( collation natural_sort ). Le
+		righe senza posizione non contano. 0: nessuna, la riga va in fondo.
+	--->
+	<cffunction name="findInsertOrdinamento" returntype="Numeric">
+		<cfargument name="quotationId" type="String" required="true">
+		<cfargument name="typeId" type="String" required="true">
+		<cfargument name="code" type="String" required="true">
+
+		<cfquery name="local.q" datasource="apirone">
+			SELECT COALESCE( MIN( quotation_items.ordinamento ), 0 ) AS ord
+			FROM quotation_items
+			INNER JOIN quotation_zone_positions ON quotation_zone_positions.quotation_zone_position_id = quotation_items.quotation_zone_position_id
+			WHERE quotation_items.quotation_item_id IN ( #listItemsSql( arguments.quotationId, arguments.typeId )# )
+				AND quotation_items.ordinamento > 0
+				AND quotation_zone_positions.code COLLATE natural_sort > <cfqueryparam cfsqltype="Varchar" value="#arguments.code#">
+		</cfquery>
+		<cfreturn Val( local.q.ord )>
+	</cffunction>
+
+	<!--- Fa posto a una riga nuova: le righe dell'elenco da fromOrdinamento in poi scalano di 10 --->
+	<cffunction name="shiftOrdinamento" returntype="void">
+		<cfargument name="quotationId" type="String" required="true">
+		<cfargument name="typeId" type="String" required="true">
+		<cfargument name="fromOrdinamento" type="Numeric" required="true">
+
+		<cfquery datasource="apirone">
+			UPDATE quotation_items
+			SET ordinamento = ordinamento + 10
+			WHERE quotation_item_id IN ( #listItemsSql( arguments.quotationId, arguments.typeId )# )
+				AND ordinamento >= <cfqueryparam cfsqltype="Integer" value="#arguments.fromOrdinamento#">
+		</cfquery>
+	</cffunction>
+
+	<!---
+		Righe di un elenco del preventivo ( tipo ART / PLA / SEG / ACC, come
+		getMaxOrdinamento ): sottoquery con gli id. Valori validati, niente input libero.
+	--->
+	<cffunction name="listItemsSql" returntype="String" access="private">
+		<cfargument name="quotationId" type="String" required="true">
+		<cfargument name="typeId" type="String" required="true">
+
+		<cfif !IsValid( "guid", arguments.quotationId ) AND !REFind( "^[0-9a-fA-F-]{36}$", arguments.quotationId )>
+			<cfthrow message="quotationId non valido: #arguments.quotationId#">
+		</cfif>
+		<cfif !REFind( "^[A-Z]{3}$", arguments.typeId )>
+			<cfthrow message="typeId non valido: #arguments.typeId#">
+		</cfif>
+
+		<cfif arguments.typeId EQ "ART">
+			<cfreturn "SELECT qi.quotation_item_id FROM quotation_items qi WHERE qi.quotation_id = '#arguments.quotationId#'::uuid AND qi.article_id IS NOT NULL">
+		</cfif>
+		<cfreturn "SELECT qi.quotation_item_id FROM quotation_items qi
+			INNER JOIN products p ON qi.product_id = p.product_id
+			INNER JOIN catalog_bundles cb ON cb.catalog_bundle_id = p.catalog_bundle_id
+			INNER JOIN product_categories pc ON cb.product_category_id = pc.product_category_id
+			WHERE qi.quotation_id = '#arguments.quotationId#'::uuid AND pc.product_category_type_id = '#arguments.typeId#'">
 	</cffunction>
 
 	<cffunction name="updateOrdinamento" returntype="void">

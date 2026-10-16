@@ -190,8 +190,22 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 				} else {
 					var typeId = "ACC";
 				}
-				var maxOrd = getDao().getMaxOrdinamento( arguments.quotationItem.getQuotation().getId(), typeId );
-				arguments.quotationItem.setOrdinamento( maxOrd + 10 );
+				// elenco mai riordinato ( tutto a 0 ): resta a 0, l'ordine è per posizione.
+				// Già ordinato: la riga va prima della prima con posizione successiva
+				// ( ordine naturale ), le seguenti scalano di un posto; senza posizione
+				// o senza posizioni successive va in fondo
+				var quotationId = arguments.quotationItem.getQuotation().getId();
+				var maxOrd      = getDao().getMaxOrdinamento( quotationId, typeId );
+				var newOrd      = maxOrd > 0 ? maxOrd + 10 : 0;
+				var code        = IsNull( arguments.quotationItem.getPosition() ) ? "" : Trim( arguments.quotationItem.getPosition().getCode() ?: "" );
+				if ( maxOrd > 0 && Len( code ) ) {
+					var insertOrd = getDao().findInsertOrdinamento( quotationId, typeId, code );
+					if ( insertOrd > 0 ) {
+						getDao().shiftOrdinamento( quotationId, typeId, insertOrd );
+						newOrd = insertOrd;
+					}
+				}
+				arguments.quotationItem.setOrdinamento( newOrd );
 			}
 
 			var newId = getDao().insert( arguments.quotationItem );
@@ -427,7 +441,10 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			// di lui (A01, A01-BIS, A02) invece che in fondo con il max+10 di create().
 			// Scritto dopo create() perché con ordinamento 0 (righe storiche mai
 			// riordinate) create() lo sostituirebbe comunque con max+10.
-			if ( !arguments.asInstance ) {
+			// ( elenco mai riordinato, ordinamento 0: la copia "-BIS" sta già dopo
+			// l'originale nell'ordine per posizione; con la posizione la mette al suo
+			// posto create(), come una riga nuova: "A01-BIS" prima di "A02" )
+			if ( !arguments.asInstance && Val( original.getOrdinamento() ) > 0 && ( IsNull( cloneBean.getPosition() ) || !Len( Trim( cloneBean.getPosition().getCode() ?: "" ) ) ) ) {
 				getDao().updateOrdinamento( newId, Val( original.getOrdinamento() ) + 5 );
 			}
 
