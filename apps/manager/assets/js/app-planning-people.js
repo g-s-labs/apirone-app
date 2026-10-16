@@ -83,7 +83,10 @@ AP.planningPeople = ( function() {
                     const xhr = await ajax( { method: "GET", url: BASE + "/people" } );
                     if ( !xhr ) return;
                     this.people = xhr.data.map( function( person ) {
-                        return Object.assign( person, { saving: false, saved: false } );
+                        // tutte le tipologie nell'oggetto, così gli input sono reattivi
+                        const priorities = {};
+                        AP.page.workTypes.forEach( function( type ) { priorities[ type.id ] = ( person.workTypePriorities || {} )[ type.id ] ?? ""; } );
+                        return Object.assign( person, { saving: false, saved: false, workTypePriorities: priorities } );
                     } );
                 },
 
@@ -125,6 +128,7 @@ AP.planningPeople = ( function() {
                         loading: false, // salvataggio di una riga: niente spinner a tutta pagina
                         data: JSON.stringify( {
                             workTypeIds: person.workTypeIds,
+                            workTypePriorities: person.workTypePriorities,
                             hours: person.hours.map( function( value ) { return Number( value ) || 0; } ),
                             dayStart: person.dayStart,
                         } ),

@@ -837,3 +837,10 @@
 .pg-due-overdue .pg-due-alert { color: #e03131; }
 .pg-legend-box.pg-legend-soon { background: #fff9db; border-color: #ffe066; }
 .pg-legend-box.pg-legend-overdue { background: #fff0f0; border-color: #ffc9c9; }
+
+/* pianificazione automatica: anteprima */
+.pg-auto-table td { vertical-align: top; }
+.pg-auto-table tr.pg-auto-late td { background: #fff0f0; }
+.pg-auto-table tr.pg-auto-missing td { background: #fff9db; }
+.pg-auto-activity + .pg-auto-activity { margin-top: 4px; }
+.pg-auto-person { display: inline-block; margin-left: 6px; padding: 0 6px; font-size: 12px; background: #eef1f5; border-radius: 999px; }

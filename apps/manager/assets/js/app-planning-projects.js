@@ -175,6 +175,12 @@ AP.planningProjects = ( function() {
                 },
 
                 // cambio di stato: si salva e si spiega cosa cambia nel Gantt
+                // data tassativa: la priorità si toglie ( anche il server la ignora )
+                changeDateType: function( project ) {
+                    if ( project.planning.dateType === "TAS" ) project.planning.priority = "";
+                    this.save( project );
+                },
+
                 changeStatus: async function( project ) {
                     const saved = await this.save( project );
                     if ( !saved ) return;

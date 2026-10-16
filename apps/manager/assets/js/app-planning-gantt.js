@@ -192,6 +192,9 @@ AP.planningGantt = ( function() {
 
                 // preventivo / progetto aperto nella modale dei dettagli ( stato, priorità, data, note )
                 itemInfo: null,
+
+                // pianificazione automatica: anteprima del server ( PlanningService.autoPlan )
+                autoPlan: { loading: false, result: null },
             },
 
             computed: {
@@ -1251,6 +1254,47 @@ AP.planningGantt = ( function() {
 
                     const start = dayKey( addDays( parseDay( block.start ), state.dayDelta ) );
                     this.api( "/" + block.id + "/move", { start: start, userId: userId } );
+                },
+
+                /* ---------- pianificazione automatica ---------- */
+
+                autoPlanCall: function( apply ) {
+                    this.autoPlan.loading = true;
+                    return new Promise( ( resolve ) => {
+                        NM.util.ajax( {
+                            method: "POST",
+                            url: BASE + "/auto-plan",
+                            data: JSON.stringify( { apply: apply } ),
+                            callback: {
+                                done: ( xhr ) => {
+                                    if ( xhr.status === "ERROR" ) {
+                                        AP.widget.notify( "error", ( xhr.data && xhr.data.message ) || "Pianificazione non riuscita." );
+                                        resolve( null );
+                                        return;
+                                    }
+                                    resolve( xhr.data );
+                                },
+                            },
+                        } ).always( () => { this.autoPlan.loading = false; } );
+                    } );
+                },
+
+                openAutoPlan: async function() {
+                    this.clearSelection();
+                    const result = await this.autoPlanCall( false );
+                    if ( !result ) return;
+                    this.autoPlan.result = result;
+                    this.$nextTick( () => NM.util.openModal( $( "#pg-auto-modal" ) ) );
+                },
+
+                applyAutoPlan: async function() {
+                    const result = await this.autoPlanCall( true );
+                    if ( !result ) return;
+                    $( "#pg-auto-modal" ).modal( "hide" );
+                    this.load();
+                    const late = result.items.filter( function( item ) { return item.late; } ).length;
+                    AP.widget.notify( late ? "warning" : "success", "Pianificazione applicata: " + result.created + " blocchi"
+                        + ( late ? ", " + late + " voci in ritardo." : "." ) );
                 },
 
                 /* ---------- utilità ---------- */

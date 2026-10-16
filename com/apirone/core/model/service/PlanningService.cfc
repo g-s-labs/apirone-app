@@ -95,6 +95,8 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 				"roleId"     = row.role_id,
 				"active"     = row.status_id == "ACT",
 				"workTypeIds" = ListToArray( row.work_type_ids ?: "" ),
+				// priorità sulle tipologie: tipo -> numero ( più basso = più alta ) o ""
+				"workTypePriorities" = parsePriorities( row.work_type_priorities ?: "" ),
 				"hours"      = hours,
 				"dayStart"   = formatTime( Val( row.day_start_minutes ) ),
 				// tariffa in vigore oggi ( stringa vuota se non c'è )
@@ -107,10 +109,23 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	}
 
 	/**
-	 * Tipologie di attività ( nessuna: la persona non si pianifica ) e ore da
-	 * lunedì a domenica.
+	 * "WAY:1,MON:" -> { WAY: 1, MON: "" }.
 	 */
-	public void function savePerson( required String userId, required Array workTypeIds, required Array hours, String dayStart = "08:00" ){
+	private Struct function parsePriorities( required String value ){
+		var result = {};
+		for ( var pair in ListToArray( arguments.value ) ) {
+			var parts = ListToArray( pair, ":" );
+			result[ parts[ 1 ] ] = parts.len() > 1 && IsNumeric( parts[ 2 ] ) ? Val( parts[ 2 ] ) : "";
+		}
+		return result;
+	}
+
+	/**
+	 * Tipologie di attività ( nessuna: la persona non si pianifica ) e ore da
+	 * lunedì a domenica. priorities: tipo -> priorità della persona su quella
+	 * tipologia ( intero >= 1, più basso = più alta; vuota = dopo le numerate ).
+	 */
+	public void function savePerson( required String userId, required Array workTypeIds, required Array hours, String dayStart = "08:00", Struct priorities = {} ){
 		// variables.: l'argomento workTypeIds nasconde la funzione omonima
 		var validIds = variables.workTypeIds();
 		for ( var workTypeId in arguments.workTypeIds ) {
@@ -127,10 +142,21 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			return Min( Max( hours, 0 ), 24 );
 		} );
 
+		var cleanPriorities = {};
+		for ( var workTypeId in arguments.workTypeIds ) {
+			var priority = arguments.priorities[ workTypeId ] ?: "";
+			if ( Len( Trim( priority ) ) ) {
+				if ( !IsNumeric( priority ) || priority < 1 || priority != Int( priority ) ) {
+					Throw( type = "apirone.planning.InvalidPriority", message = "La priorità è un numero intero da 1 in su ( 1 = la più alta )." );
+				}
+				cleanPriorities[ workTypeId ] = Int( priority );
+			}
+		}
+
 		parseTime( arguments.dayStart );
 		transaction {
 			getDao().updatePerson( arguments.userId, cleanHours, arguments.dayStart );
-			getDao().savePersonWorkTypes( arguments.userId, arguments.workTypeIds );
+			getDao().savePersonWorkTypes( arguments.userId, arguments.workTypeIds, cleanPriorities );
 		}
 	}
 
@@ -275,6 +301,11 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		}
 		if ( Len( dueDate ) && !REFind( "^\d{4}-\d{2}-\d{2}$", dueDate ) ) {
 			Throw( type = "apirone.planning.InvalidPlanning", message = "Data non valida." );
+		}
+
+		// data tassativa: niente priorità, la voce viene comunque per prima
+		if ( dateType == "TAS" ) {
+			priority = "";
 		}
 
 		return { "statusId" = statusId, "dueDate" = dueDate, "dateType" = dateType, "priority" = priority, "note" = note };
@@ -1059,6 +1090,328 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	public void function setBlockNote( required Numeric blockId, required String note ){
 		loadBlock( arguments.blockId );
 		getDao().updateBlockNote( arguments.blockId, Left( arguments.note, 1000 ) );
+	}
+
+	/* ======================= Pianificazione automatica ======================= */
+
+	/*
+		Ripianifica le attività delle voci del Calendario ( preventivi e progetti
+		in corso o da programmare ):
+		- ordine delle voci: prima quelle con data tassativa, poi priorità A, B, C,
+		  poi senza priorità; a parità la data più vicina ( senza data in fondo ),
+		  poi la più recente;
+		- ore di ogni attività: le stimate meno quelle già fissate ( mai meno delle
+		  ore che aveva nei blocchi spostabili: le ore pianificate a mano oltre la
+		  stima restano );
+		- le attività di una voce sono indipendenti ( in parallelo );
+		- a ritroso dalla data della voce fino a oggi: le ore vanno alla persona
+		  della tipologia con la priorità più alta ( planning_person_work_types.
+		  priority ) nei suoi giorni liberi, e solo se non bastano alla successiva;
+		  quello che non ci sta va dopo la data ( in ritardo ), giorno per giorno a
+		  tutte le persone libere in ordine di priorità, per finire prima possibile;
+		  senza data si parte da oggi in avanti allo stesso modo;
+		- si spostano solo i blocchi delle voci ripianificate che iniziano da oggi,
+		  senza lucchetto e non extra: lucchetto, blocchi già iniziati e ore extra
+		  restano fermi e occupano la disponibilità delle persone;
+		- disponibilità: le ore della persona per giorno della settimana, senza
+		  sabati, domeniche, festivi e chiusure.
+		apply false: solo l'anteprima ( nessuna modifica ); true: salva.
+		Restituisce { items: [ voci ripianificate, in ordine ], moved, kept, created }.
+	*/
+	public Struct function autoPlan( Boolean apply = false, String userId = "" ){
+		var today      = CreateDate( Year( Now() ), Month( Now() ), Day( Now() ) );
+		var todayKey   = DateFormat( today, "yyyy-mm-dd" );
+		var horizonEnd = DateAdd( "d", variables.HORIZON_DAYS, today );
+		var nonWorking = getWorkCalendarService().nonWorkingDays( today, horizonEnd );
+		var types      = workTypes();
+
+		// giorni pianificabili, da oggi
+		var days     = [];
+		var dayIndex = {};
+		for ( var i = 0; i <= variables.HORIZON_DAYS; i++ ) {
+			var date = DateAdd( "d", i, today );
+			days.append( { "key" = DateFormat( date, "yyyy-mm-dd" ), "date" = date } );
+			dayIndex[ days[ days.len() ].key ] = days.len();
+		}
+
+		// persone con disponibilità libera e attività già fissate per giorno
+		var people     = [];
+		var peopleById = {};
+		for ( var row in listPeople( onlyWithType = true ) ) {
+			var person = {
+				"id"          = row.id,
+				"name"        = row.name,
+				"workTypeIds" = row.workTypeIds,
+				"priorities"  = row.workTypePriorities,
+				"hours"       = row.hours,
+				"dayStart"    = Val( ListFirst( row.dayStart, ":" ) ) * 60 + Val( ListLast( row.dayStart, ":" ) ),
+				"free"        = {},
+				"booked"      = {}
+			};
+			people.append( person );
+			peopleById[ person.id ] = person;
+		}
+
+		var items = plannableItems().filter( function( item ){
+			return item.plannable && ( item.planningStatusId == "COR" || item.planningStatusId == "DAP" );
+		} );
+		var itemIds = {};
+		for ( var item in items ) {
+			itemIds[ item.id ] = true;
+		}
+
+		// blocchi da oggi: spostabili ( voci ripianificate, iniziano da oggi, senza
+		// lucchetto, non extra ) o fissi
+		var blocks = {};
+		for ( var row in getDao().findBlocksFrom( today ) ) {
+			if ( !blocks.keyExists( row.block_id ) ) {
+				blocks[ row.block_id ] = {
+					"id"         = row.block_id,
+					"itemId"     = row.item_id,
+					"userId"     = row.user_id,
+					"workTypeId" = row.work_type_id,
+					"extra"      = row.extra ? true : false,
+					"locked"     = IsDate( row.locked_at ?: "" ),
+					"days"       = []
+				};
+			}
+			blocks[ row.block_id ].days.append( { "day" = DateFormat( row.day, "yyyy-mm-dd" ), "hours" = Val( row.hours ), "start" = Val( row.start_minutes ) } );
+		}
+
+		var movableHours = {};
+		var movable      = [];
+		var kept         = 0;
+		for ( var blockId in blocks ) {
+			var block = blocks[ blockId ];
+			var candidatesExist = people.some( function( person ){ return ArrayContains( person.workTypeIds, block.workTypeId ); } );
+			block[ "movable" ] = !block.locked && !block.extra && block.days[ 1 ].day >= todayKey
+				&& itemIds.keyExists( block.itemId ) && candidatesExist;
+
+			if ( block.movable ) {
+				var key = block.itemId & "|" & block.workTypeId;
+				movableHours[ key ] = ( movableHours[ key ] ?: 0 ) + blockTotal( block );
+				movable.append( block.id );
+				continue;
+			}
+
+			kept++;
+			if ( !peopleById.keyExists( block.userId ) ) continue;
+			var owner = peopleById[ block.userId ];
+			for ( var day in block.days ) {
+				if ( !dayIndex.keyExists( day.day ) ) continue;
+				var date = days[ dayIndex[ day.day ] ].date;
+				owner.free[ day.day ] = Max( autoFree( owner, day.day, date, nonWorking ) - day.hours, 0 );
+				if ( !owner.booked.keyExists( day.day ) ) owner.booked[ day.day ] = [];
+				owner.booked[ day.day ].append( { "start" = day.start, "end" = day.start + Round( day.hours * 60 ) } );
+				owner.booked[ day.day ].sort( function( a, b ){ return a.start - b.start; } );
+			}
+		}
+
+		items.sort( function( a, b ){
+			var rank = autoRank( a ) - autoRank( b );
+			if ( rank != 0 ) return rank;
+			if ( a.dueDate != b.dueDate ) {
+				if ( !Len( a.dueDate ) ) return 1;
+				if ( !Len( b.dueDate ) ) return -1;
+				return Compare( a.dueDate, b.dueDate );
+			}
+			return Compare( b.createdAt ?: "", a.createdAt ?: "" );
+		} );
+
+		var results   = [];
+		var newBlocks = [];
+
+		for ( var item in items ) {
+			var activities = [];
+			var itemLate   = false;
+			var itemFinish = "";
+			var itemHours  = 0;
+			var itemMissing = 0;
+
+			for ( var type in types ) {
+				var hours  = item.hours[ type.id ] ?: { "estimated" = 0, "planned" = 0 };
+				var key    = item.id & "|" & type.id;
+				var moving = movableHours[ key ] ?: 0;
+				var need   = Round( Max( hours.estimated - ( hours.planned - moving ), moving ) * 100 ) / 100;
+				if ( need <= 0.001 ) continue;
+
+				var typeId     = type.id;
+				var candidates = people.filter( function( person ){ return ArrayContains( person.workTypeIds, typeId ); } );
+				candidates.sort( function( a, b ){
+					var pa = a.priorities[ typeId ] ?: "";
+					var pb = b.priorities[ typeId ] ?: "";
+					if ( pa != pb ) {
+						if ( !IsNumeric( pa ) ) return 1;
+						if ( !IsNumeric( pb ) ) return -1;
+						return pa - pb;
+					}
+					return CompareNoCase( a.name, b.name );
+				} );
+
+				var activity = {
+					"workTypeId" = type.id,
+					"activity"   = type.name,
+					"hours"      = need,
+					"missing"    = 0,
+					"late"       = false,
+					"from"       = "",
+					"to"         = "",
+					"people"     = [],
+					"problem"    = ""
+				};
+
+				if ( !candidates.len() ) {
+					activity.missing = need;
+					activity.problem = "Nessuna persona con la tipologia " & type.name & ".";
+				} else {
+					var allocations = {};
+					var left        = need;
+					var dueKnown    = Len( item.dueDate ) > 0;
+
+					// a ritroso dalla data ( se è ancora da venire ), fino a oggi: prima tutti
+					// i giorni liberi della persona con la priorità più alta, poi la successiva
+					if ( dueKnown && item.dueDate >= todayKey ) {
+						var last = dayIndex[ item.dueDate ] ?: days.len();
+						for ( var candidate in candidates ) {
+							for ( var i = last; i >= 1 && left > 0.001; i-- ) {
+								left = autoAllocate( [ candidate ], days[ i ], left, allocations, nonWorking );
+							}
+							if ( left <= 0.001 ) break;
+						}
+					}
+					// il resto in avanti: dopo la data ( in ritardo ) o da oggi senza data
+					if ( left > 0.001 ) {
+						var first = dueKnown && dayIndex.keyExists( item.dueDate ) ? dayIndex[ item.dueDate ] + 1 : 1;
+						if ( dueKnown && !dayIndex.keyExists( item.dueDate ) && item.dueDate >= todayKey ) first = days.len() + 1;
+						for ( var i = first; i <= days.len() && left > 0.001; i++ ) {
+							left = autoAllocate( candidates, days[ i ], left, allocations, nonWorking );
+						}
+					}
+
+					activity.missing = Round( left * 100 ) / 100;
+					if ( activity.missing > 0 ) {
+						activity.problem = "Disponibilità insufficiente nei prossimi 12 mesi: mancano " & activity.missing & " h.";
+					}
+
+					for ( var candidate in candidates ) {
+						if ( !allocations.keyExists( candidate.id ) ) continue;
+						var personDays = allocations[ candidate.id ];
+						personDays.sort( function( a, b ){ return Compare( a.day, b.day ); } );
+						var total = 0;
+						for ( var day in personDays ) total += day.hours;
+						activity.people.append( { "name" = candidate.name, "hours" = Round( total * 100 ) / 100, "from" = personDays[ 1 ].day, "to" = personDays[ personDays.len() ].day } );
+						if ( !Len( activity.from ) || personDays[ 1 ].day < activity.from ) activity.from = personDays[ 1 ].day;
+						if ( personDays[ personDays.len() ].day > activity.to ) activity.to = personDays[ personDays.len() ].day;
+						newBlocks.append( { "itemId" = item.id, "userId" = candidate.id, "workTypeId" = type.id, "days" = personDays } );
+					}
+				}
+
+				activity.late = Len( item.dueDate ) && ( activity.to > item.dueDate || ( item.dueDate < todayKey && activity.people.len() ) );
+				itemLate      = itemLate || activity.late;
+				itemHours    += need;
+				itemMissing  += activity.missing;
+				if ( activity.to > itemFinish ) itemFinish = activity.to;
+				activities.append( activity );
+			}
+
+			if ( activities.len() ) {
+				results.append( {
+					"id"         = item.id,
+					"kind"       = item.kind,
+					"label"      = item.label,
+					"subtitle"   = item.kind == "project" ? item.rifLibero : ( Len( item.customer ) ? item.customer : item.name ),
+					"statusId"   = item.planningStatusId,
+					"dueDate"    = item.dueDate,
+					"dateType"   = item.dateType,
+					"priority"   = item.priority,
+					"hours"      = Round( itemHours * 100 ) / 100,
+					"missing"    = Round( itemMissing * 100 ) / 100,
+					"finish"     = itemFinish,
+					"late"       = itemLate,
+					"activities" = activities
+				} );
+			}
+		}
+
+		if ( arguments.apply ) {
+			transaction {
+				for ( var blockId in movable ) {
+					getDao().deleteBlock( blockId );
+				}
+				for ( var newBlock in newBlocks ) {
+					var blockArgs = blockOwner( newBlock.itemId );
+					blockArgs.append( {
+						"userId"     = newBlock.userId,
+						"workTypeId" = newBlock.workTypeId,
+						"startDay"   = newBlock.days[ 1 ].day,
+						"createdBy"  = arguments.userId
+					} );
+					var newId = getDao().insertBlock( argumentCollection = blockArgs );
+					getDao().replaceBlockDays( newId, newBlock.days );
+				}
+			}
+		}
+
+		return {
+			"items"   = results,
+			"moved"   = movable.len(),
+			"kept"    = kept,
+			"created" = newBlocks.len(),
+			"applied" = arguments.apply
+		};
+	}
+
+	/**
+	 * Ordine della pianificazione automatica: tassativa, poi priorità A, B, C, poi nessuna.
+	 */
+	private Numeric function autoRank( required Struct item ){
+		if ( arguments.item.dateType == "TAS" ) return 0;
+		switch ( arguments.item.priority ) {
+			case "A": return 1;
+			case "B": return 2;
+			case "C": return 3;
+		}
+		return 4;
+	}
+
+	/**
+	 * Ore libere della persona nel giorno ( la capacità, al primo uso ).
+	 */
+	private Numeric function autoFree( required Struct person, required String key, required Date date, required Struct nonWorking ){
+		if ( !arguments.person.free.keyExists( arguments.key ) ) {
+			arguments.person.free[ arguments.key ] = dayCapacity( arguments.person, arguments.date, arguments.nonWorking, false, false );
+		}
+		return arguments.person.free[ arguments.key ];
+	}
+
+	/**
+	 * Un giorno: le ore ancora da mettere vanno alle persone libere, in ordine di
+	 * priorità ( candidates già ordinati ). allocations: persona -> [ { day,
+	 * hours, start } ]. Restituisce le ore che restano.
+	 */
+	private Numeric function autoAllocate( required Array candidates, required Struct day, required Numeric left, required Struct allocations, required Struct nonWorking ){
+		var remaining = arguments.left;
+
+		for ( var person in arguments.candidates ) {
+			if ( remaining <= 0.001 ) break;
+
+			var free = autoFree( person, arguments.day.key, arguments.day.date, arguments.nonWorking );
+			if ( free <= 0 ) continue;
+
+			var hours = Round( Min( free, remaining ) * 100 ) / 100;
+			var start = freeStart( person, person.booked[ arguments.day.key ] ?: [] );
+
+			person.free[ arguments.day.key ] = free - hours;
+			if ( !person.booked.keyExists( arguments.day.key ) ) person.booked[ arguments.day.key ] = [];
+			person.booked[ arguments.day.key ].append( { "start" = start, "end" = start + Round( hours * 60 ) } );
+			person.booked[ arguments.day.key ].sort( function( a, b ){ return a.start - b.start; } );
+
+			if ( !arguments.allocations.keyExists( person.id ) ) arguments.allocations[ person.id ] = [];
+			arguments.allocations[ person.id ].append( { "day" = arguments.day.key, "hours" = hours, "start" = start } );
+			remaining -= hours;
+		}
+
+		return remaining;
 	}
 
 	/*

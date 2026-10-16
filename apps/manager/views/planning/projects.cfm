@@ -154,13 +154,16 @@
                                         v-model="project.planning.statusId" @change="changeStatus( project )" title="Stato">
                                     <option v-for="status in options.statuses" :key="status.id" :value="status.id">{{ status.name }}</option>
                                 </select>
-                                <select class="form-select form-select-sm mt-1" v-model="project.planning.priority" @change="save( project )" title="Priorità">
-                                    <option value="">-- priorità</option>
+                                <!--- con data tassativa niente priorità: la voce viene comunque per prima --->
+                                <select class="form-select form-select-sm mt-1" v-model="project.planning.priority" @change="save( project )"
+                                        :disabled="project.planning.dateType === 'TAS'"
+                                        :title="project.planning.dateType === 'TAS' ? 'Data tassativa: la voce ha già la precedenza, niente priorità' : 'Priorità'">
+                                    <option value="">{{ project.planning.dateType === 'TAS' ? '-- tassativa' : '-- priorità' }}</option>
                                     <option v-for="priority in options.priorities" :key="priority.id" :value="priority.id">{{ priority.name }}</option>
                                 </select>
                                 <div class="d-flex gap-1 mt-1">
                                     <input type="date" class="form-control form-control-sm" v-model="project.planning.dueDate" @change="save( project )" title="Data">
-                                    <select class="form-select form-select-sm pp-date-type" v-model="project.planning.dateType" @change="save( project )" title="Tipo di data">
+                                    <select class="form-select form-select-sm pp-date-type" v-model="project.planning.dateType" @change="changeDateType( project )" title="Tipo di data">
                                         <option value="">-- tipo</option>
                                         <option v-for="type in options.dateTypes" :key="type.id" :value="type.id">{{ type.name }}</option>
                                     </select>

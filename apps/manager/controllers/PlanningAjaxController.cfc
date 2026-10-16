@@ -16,7 +16,13 @@ component extends="com.apirone.core.controller.AbsController" {
 		var json   = DeserializeJSON( GetHTTPRequestData().content );
 
 		try {
-			super.service( "Planning" ).savePerson( rc.id, workTypeIdsOf( json ), json.hours ?: [], json.dayStart ?: "08:00" );
+			super.service( "Planning" ).savePerson(
+				rc.id,
+				workTypeIdsOf( json ),
+				json.hours ?: [],
+				json.dayStart ?: "08:00",
+				IsStruct( json.workTypePriorities ?: "" ) ? json.workTypePriorities : {}
+			);
 			result.setData( { "message" = "Disponibilità salvata." } );
 		} catch ( any e ) {
 			// errori di validazione del service ( apirone.planning.* ): messaggio all'utente
@@ -61,6 +67,18 @@ component extends="com.apirone.core.controller.AbsController" {
 		}
 
 		event.setValue( "result", result );
+	}
+
+	/**
+	 * Pianificazione automatica ( PlanningService.autoPlan ): apply false =
+	 * anteprima, true = ripianifica e salva.
+	 */
+	function autoPlan( event, rc, prc ){
+		var json = DeserializeJSON( GetHTTPRequestData().content );
+
+		blockAction( event, function( service ){
+			return service.autoPlan( apply = IsBoolean( json.apply ?: "" ) && json.apply, userId = session.user.getId() );
+		} );
 	}
 
 	/* ======================= Blocchi ======================= */

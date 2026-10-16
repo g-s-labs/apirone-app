@@ -345,6 +345,7 @@
 		post( "/ajax/planning/blocks/:id/note" ).to( "PlanningAjaxController.setBlockNote" ).end();
 		post( "/ajax/planning/blocks/:id/extra" ).to( "PlanningAjaxController.setBlockExtra" ).end();
 		post( "/ajax/planning/blocks/:id/lock" ).to( "PlanningAjaxController.setBlockLock" ).end();
+		post( "/ajax/planning/auto-plan" ).to( "PlanningAjaxController.autoPlan" ).end();
 		delete( "/ajax/planning/blocks/:id" ).to( "PlanningAjaxController.deleteBlock" ).end();
 		post( "/ajax/planning/blocks" ).to( "PlanningAjaxController.createBlock" ).end();
 		delete( "/ajax/planning/projects/:id/quotations/:quotationId" ).to( "PlanningAjaxController.unlinkQuotation" ).end();

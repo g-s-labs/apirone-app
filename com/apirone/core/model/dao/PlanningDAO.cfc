@@ -35,6 +35,12 @@
 					JOIN planning_work_types wt ON wt.work_type_id = pw.work_type_id
 					WHERE pw.user_id = u.user_id
 				) AS work_type_ids,
+				<!--- priorità sulle tipologie: "WAY:1,MON:" ( vuota = dopo quelle numerate ) --->
+				(
+					SELECT string_agg( pw.work_type_id || ':' || COALESCE( pw.priority::varchar, '' ), ',' )
+					FROM planning_person_work_types pw
+					WHERE pw.user_id = u.user_id
+				) AS work_type_priorities,
 				u.hours_mon, u.hours_tue, u.hours_wed, u.hours_thu, u.hours_fri, u.hours_sat, u.hours_sun,
 				EXTRACT( EPOCH FROM u.day_start )::int / 60 AS day_start_minutes,
 				cur.hourly_cost,
@@ -79,24 +85,32 @@
 		</cfquery>
 	</cffunction>
 
-	<!--- Tipologie della persona: sostituisce quelle che aveva ( vuoto: non si pianifica ) --->
+	<!---
+		Tipologie della persona: sostituisce quelle che aveva ( vuoto: non si
+		pianifica ). priorities: tipo -> priorità ( intero >= 1; assente = nessuna ).
+	--->
 	<cffunction name="savePersonWorkTypes" returntype="void" access="public">
 		<cfargument name="userId" type="String" required="true">
 		<cfargument name="workTypeIds" type="Array" required="true">
+		<cfargument name="priorities" type="Struct" default="#{}#">
 
 		<cfquery datasource="apirone">
 			DELETE FROM planning_person_work_types
 			WHERE user_id = <cfqueryparam cfsqltype="varchar" value="#arguments.userId#">::uuid
 		</cfquery>
 
-		<cfif ArrayLen( arguments.workTypeIds )>
+		<cfloop array="#arguments.workTypeIds#" item="local.workTypeId">
+			<cfset local.priority = arguments.priorities[ local.workTypeId ] ?: "">
 			<cfquery datasource="apirone">
-				INSERT INTO planning_person_work_types ( user_id, work_type_id )
-				SELECT <cfqueryparam cfsqltype="varchar" value="#arguments.userId#">::uuid, work_type_id
+				INSERT INTO planning_person_work_types ( user_id, work_type_id, priority )
+				SELECT
+					<cfqueryparam cfsqltype="varchar" value="#arguments.userId#">::uuid,
+					work_type_id,
+					<cfqueryparam cfsqltype="integer" value="#Val( local.priority )#" null="#!IsNumeric( local.priority )#">
 				FROM planning_work_types
-				WHERE work_type_id IN ( <cfqueryparam cfsqltype="varchar" value="#ArrayToList( arguments.workTypeIds )#" list="true"> )
+				WHERE work_type_id = <cfqueryparam cfsqltype="varchar" value="#local.workTypeId#">
 			</cfquery>
-		</cfif>
+		</cfloop>
 	</cffunction>
 
 	<!--- ======================= Ore dei preventivi ======================= --->
@@ -366,6 +380,37 @@
 				SELECT block_id FROM planning_block_days
 				WHERE day BETWEEN <cfqueryparam cfsqltype="date" value="#arguments.fromDate#">
 					AND <cfqueryparam cfsqltype="date" value="#arguments.toDate#">
+			)
+			ORDER BY b.block_id, d.day
+		</cfquery>
+
+		<cfreturn local.q>
+	</cffunction>
+
+	<!---
+		Pianificazione automatica: blocchi con almeno un giorno da fromDate in poi,
+		con tutti i loro giorni ( il primo giorno dice se il blocco è già iniziato ).
+	--->
+	<cffunction name="findBlocksFrom" returntype="Query" access="public">
+		<cfargument name="fromDate" type="Date" required="true">
+
+		<cfquery name="local.q" datasource="apirone">
+			SELECT
+				b.block_id,
+				COALESCE( b.project_id, b.quotation_id )::varchar AS item_id,
+				b.user_id::varchar AS user_id,
+				b.work_type_id,
+				b.extra,
+				b.locked_at,
+				d.day,
+				d.hours,
+				EXTRACT( EPOCH FROM COALESCE( d.start_time, u.day_start ) )::int / 60 AS start_minutes
+			FROM planning_blocks b
+			JOIN planning_block_days d ON d.block_id = b.block_id
+			JOIN membership.users u ON u.user_id = b.user_id
+			WHERE b.block_id IN (
+				SELECT block_id FROM planning_block_days
+				WHERE day >= <cfqueryparam cfsqltype="date" value="#arguments.fromDate#">
 			)
 			ORDER BY b.block_id, d.day
 		</cfquery>

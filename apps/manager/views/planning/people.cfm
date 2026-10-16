@@ -107,11 +107,19 @@
                             </td>
                             <td>
                                 <!--- tipologie della persona: nessuna = non si pianifica --->
+                                <!--- tipologie attive: priorità della persona su quella tipologia ( 1 = la più alta ) --->
                                 <div class="planning-type-chips">
                                     <span v-for="type in workTypes" :key="type.id" class="planning-type-chip"
                                           :class="{ active: person.workTypeIds.indexOf( type.id ) !== -1 }"
                                           :style="chipStyle( type, person.workTypeIds )"
-                                          @click="toggleType( person.workTypeIds, type.id ); changeType( person )">{{ type.name }}</span>
+                                          @click="toggleType( person.workTypeIds, type.id ); changeType( person )">
+                                        {{ type.name }}
+                                        <input v-if="person.workTypeIds.indexOf( type.id ) !== -1" type="number" min="1" step="1"
+                                               class="planning-type-priority" placeholder="–"
+                                               v-model="person.workTypePriorities[ type.id ]"
+                                               @click.stop @change="save( person )"
+                                               title="Priorità nella pianificazione automatica: 1 = la più alta; vuota = dopo le numerate">
+                                    </span>
                                 </div>
                             </td>
                             <td v-for="( day, index ) in dayNames" :key="day" class="text-center"
@@ -287,5 +295,7 @@
     .planning-type-chips { display: flex; flex-wrap: wrap; gap: 3px; min-width: 280px; }
     .planning-type-chip { padding: 1px 7px; font-size: 11px; line-height: 17px; border: 1px solid ##ced4da; border-radius: 999px; color: ##6b7684; background: ##fff; cursor: pointer; user-select: none; }
     .planning-type-chip.active { color: ##fff; font-weight: 600; }
+    .planning-type-priority { width: 30px; margin-left: 3px; padding: 0 2px; font-size: 10px; line-height: 14px; text-align: center; color: ##1d2b3a; background: rgba( 255, 255, 255, .9 ); border: 0; border-radius: 3px; -moz-appearance: textfield; }
+    .planning-type-priority::-webkit-outer-spin-button, .planning-type-priority::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 </style>
 </cfoutput>

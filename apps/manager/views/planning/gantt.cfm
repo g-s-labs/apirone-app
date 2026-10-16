@@ -37,7 +37,13 @@
             <i v-if="loading" class="fas fa-spinner fa-spin text-muted"></i>
         </div>
 
-        <div class="btn-group btn-group-sm ms-auto" role="group">
+        <!--- pianificazione automatica: anteprima, poi conferma --->
+        <button type="button" class="btn btn-default btn-sm ms-auto" @click="openAutoPlan" :disabled="autoPlan.loading"
+                title="Ripianifica le attività dei preventivi e progetti in corso e da programmare ( anteprima prima di salvare )">
+            <i class="fas" :class="autoPlan.loading ? 'fa-spinner fa-spin' : 'fa-magic'"></i> Pianifica
+        </button>
+
+        <div class="btn-group btn-group-sm" role="group">
             <button type="button" class="btn" :class="groupBy === 'people' ? 'btn-primary' : 'btn-default'" @click="setGroupBy( 'people' )">
                 <i class="fas fa-users"></i> Persone
             </button>
@@ -420,6 +426,87 @@
                             <a href="/manager/planning/projects" target="_blank" class="btn btn-primary">
                                 <i class="fas fa-pen"></i> Modifica in Ore progetti
                             </a>
+                        </footer>
+                    </div>
+                </section>
+            </div>
+
+            <!--- pianificazione automatica: anteprima di cosa cambierebbe, poi conferma --->
+            <div id="pg-auto-modal" class="modal fade" tabindex="-1">
+                <section class="modal-dialog modal-xl modal-dialog-scrollable">
+                    <div class="modal-content" v-if="autoPlan.result">
+                        <header class="modal-header">
+                            <h5 class="modal-title"><i class="fas fa-magic text-muted"></i> Pianificazione automatica: anteprima</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </header>
+                        <div class="modal-body">
+                            <p class="mb-2">
+                                Si ripianificano <strong>{{ autoPlan.result.items.length }}</strong> preventivi / progetti:
+                                <strong>{{ autoPlan.result.moved }}</strong> blocchi spostati ( eliminati e ricreati ),
+                                <strong>{{ autoPlan.result.created }}</strong> blocchi dopo la pianificazione.
+                                Restano fermi <strong>{{ autoPlan.result.kept }}</strong> blocchi da oggi in poi ( con lucchetto, già iniziati, ore extra, o di voci non ripianificate ).
+                            </p>
+                            <p class="small text-muted mb-3">
+                                Ordine: data tassativa, poi priorità A, B, C; a parità la data più vicina. Ogni attività va a ritroso dalla data
+                                alla persona con la priorità più alta sulla tipologia ( Disponibilità persone ), poi alle successive; quello che
+                                non ci sta va dopo la data. Senza data: da oggi. Sabati, domeniche e festivi esclusi.
+                            </p>
+                            <div v-if="!autoPlan.result.items.length" class="text-muted">Nessuna attività da pianificare.</div>
+                            <table v-else class="table table-sm align-middle pg-auto-table">
+                                <thead>
+                                    <tr>
+                                        <th>Preventivo / progetto</th>
+                                        <th>Data</th>
+                                        <th>Priorità</th>
+                                        <th>Attività</th>
+                                        <th>Fine</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="item in autoPlan.result.items" :key="item.id" :class="{ 'pg-auto-late': item.late, 'pg-auto-missing': !item.late && item.missing }">
+                                        <td>
+                                            <i class="fas text-muted" :class="item.kind === 'project' ? 'fa-folder-open' : 'fa-file-invoice'"></i>
+                                            <strong>{{ item.label }}</strong>
+                                            <span v-if="item.statusId !== 'COR'" class="pg-planning-status">{{ optionName( options.statuses, item.statusId ) }}</span>
+                                            <div class="small text-muted" v-if="item.subtitle">{{ item.subtitle }}</div>
+                                        </td>
+                                        <td class="text-nowrap">
+                                            <template v-if="item.dueDate">
+                                                {{ formatDay( item.dueDate ) }}
+                                                <span v-if="item.dateType" class="pg-due" :class="{ tassativa: item.dateType === 'TAS' }">{{ optionName( options.dateTypes, item.dateType ) }}</span>
+                                            </template>
+                                            <span v-else class="text-muted">—</span>
+                                        </td>
+                                        <td>
+                                            <span v-if="item.priority" class="pg-priority" :class="'pg-priority-' + item.priority">{{ item.priority }}</span>
+                                        </td>
+                                        <td>
+                                            <div v-for="activity in item.activities" :key="activity.workTypeId" class="pg-auto-activity">
+                                                <span class="pg-chip-dot" :style="{ backgroundColor: workType( activity.workTypeId ).color }"></span>
+                                                <strong>{{ activity.activity }}</strong> {{ format( activity.hours ) }} h
+                                                <span v-for="person in activity.people" :key="person.name" class="pg-auto-person">
+                                                    {{ person.name }} {{ format( person.hours ) }} h
+                                                    <span class="text-muted">{{ person.from === person.to ? formatDay( person.from ) : formatDay( person.from ) + "–" + formatDay( person.to ) }}</span>
+                                                </span>
+                                                <span v-if="activity.late" class="badge bg-danger">in ritardo</span>
+                                                <div v-if="activity.problem" class="small text-danger">{{ activity.problem }}</div>
+                                            </div>
+                                        </td>
+                                        <td class="text-nowrap">
+                                            <template v-if="item.finish">{{ formatDay( item.finish ) }}</template>
+                                            <i v-if="item.late" class="fas fa-exclamation-circle text-danger" title="Finisce dopo la data"></i>
+                                            <i v-else-if="item.missing" class="fas fa-exclamation-triangle text-warning" :title="format( item.missing ) + ' h non pianificate'"></i>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <footer class="modal-footer">
+                            <span class="me-auto small text-muted">Confermando si ricalcola e si salva: i blocchi spostabili attuali vengono sostituiti.</span>
+                            <button type="button" class="btn btn-default" data-bs-dismiss="modal">Annulla</button>
+                            <button type="button" class="btn btn-primary" @click="applyAutoPlan" :disabled="autoPlan.loading || !autoPlan.result.items.length">
+                                <i class="fas" :class="autoPlan.loading ? 'fa-spinner fa-spin' : 'fa-check'"></i> Applica la pianificazione
+                            </button>
                         </footer>
                     </div>
                 </section>
