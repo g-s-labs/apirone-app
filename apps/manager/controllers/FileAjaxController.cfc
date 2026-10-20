@@ -116,12 +116,27 @@ component extends="com.apirone.core.controller.AbsController" {
 
 		entity.setValue( rc.id );
 
+		// solo immagini e pdf: il controllo sul MIME (strict) e quello sull'estensione vanno fatti entrambi
+		var allowedExtensions = [ "jpg", "jpeg", "png", "gif", "webp", "pdf" ];
+
 		cffile(
 			filefield    = rc.files[ 1 ],
 			nameconflict = "MAKEUNIQUE",
 			destination  = tmpDir,
-			action       = "UPLOAD"
+			action       = "UPLOAD",
+			accept       = "image/jpeg,image/png,image/gif,image/webp,application/pdf",
+			strict       = true
 		);
+
+		if ( !ArrayFindNoCase( allowedExtensions, cffile.ServerFileExt ) ) {
+			FileDelete( "#tmpDir#/#cffile.ServerFile#" );
+
+			var invalidResult = super.getResult();
+			invalidResult.setStatus( "ERROR" );
+			invalidResult.setData( { "message" = "Tipo di file non ammesso" } );
+			event.setValue( "result", invalidResult );
+			return;
+		}
 
 		if ( Len( rc.fileId ) ) {
 			super.fire( "file.delete", { fileId = rc.fileId } );

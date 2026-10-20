@@ -631,7 +631,7 @@
 		<cfquery name="qCheck" datasource="verticaleExport">
 			SELECT AR_CHIAVE
 			FROM ARTICO_APIR
-			WHERE AR_CHIAVE = '#arguments.data.AR_CHIAVE#'
+			WHERE AR_CHIAVE = <cfqueryparam value="#arguments.data.AR_CHIAVE#" cfsqltype="varchar">
 		</cfquery>
 
 		<cfif qCheck.recordCount EQ 0>
