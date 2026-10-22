@@ -1076,13 +1076,13 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		var lines = [];
 
 		pricing.setQuantity( StructKeyExists( json.price, "quantity" ) && Val( json.price.quantity ) ? json.item.quantity : 1 );
-		pricing.setDiscount1( Val( json.price.discount1 ) ? json.price.discount1 : 0 );
-		pricing.setDiscount2( Val( json.price.discount2 ) ? json.price.discount2 : 0 );
+		pricing.setDiscount1( parseDecimal( json.price.discount1 ) );
+		pricing.setDiscount2( parseDecimal( json.price.discount2 ) );
 
 		pricing.setMethod( method.setId( json.price.method.id ) );
 
         if ( pricing.isFixed() ) {
-			pricing.setAmount( Val( json.price.total ) ? json.price.total : 0 );
+			pricing.setAmount( parseDecimal( json.price.total ) );
 		} else {
 			pricing.setAmount( 0 );
 		}
@@ -1274,6 +1274,20 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		if ( pricing.isFixed() ) pricing.setMissingPrice( false );
 
 		return pricing;
+	}
+
+	/*
+		Importo/sconto digitato dall'utente → numero. Accetta la virgola decimale
+		( "200,20", "1.234,56" ): passare la stringa così com'è ai setter Numeric
+		del bean fa fallire il salvataggio. Vuoto o non numerico → 0.
+	*/
+	private Numeric function parseDecimal( any value ){
+		if ( IsNull( arguments.value ) || IsSimpleValue( arguments.value ) == false ) return 0;
+		var s = ReReplace( Trim( arguments.value ), "[\s€]", "", "all" );
+		if ( Find( ",", s ) ) {
+			s = Replace( Replace( s, ".", "", "all" ), ",", ".", "all" );
+		}
+		return IsNumeric( s ) ? Val( s ) : 0;
 	}
 
 	private Boolean function isVitiAVistaNo( required Struct json ) {
@@ -1475,13 +1489,13 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		pricing.setQuotationItemId( json.quotationItem.id );
 		pricing.setId( Val( json.quotationItem.price.id ) ? json.quotationItem.price.id : null );
 		pricing.setQuantity( Val( json.quotationItem.quantity ) ? json.quotationItem.quantity : 1 );
-		pricing.setDiscount1( Val( json.quotationItem.price.discount1 ) ? json.quotationItem.price.discount1 : 0 );
-		pricing.setDiscount2( Val( json.quotationItem.price.discount2 ) ? json.quotationItem.price.discount2 : 0 );
+		pricing.setDiscount1( parseDecimal( json.quotationItem.price.discount1 ) );
+		pricing.setDiscount2( parseDecimal( json.quotationItem.price.discount2 ) );
 
 		pricing.setMethod( method.setId( json.quotationItem.price.method.id ) );
 
         if ( json.quotationItem.price.method.id EQ 'F' ) {
-			pricing.setAmount( Val( json.quotationItem.price.total ) ? json.quotationItem.price.total : 0 );
+			pricing.setAmount( parseDecimal( json.quotationItem.price.total ) );
 		} else {
 			pricing.setAmount( 0 );
 		}
@@ -1577,13 +1591,13 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		pricing.setQuotationItemId( json.quotationItem.id );
 		pricing.setId( Val( json.quotationItem.price.id ) ? json.quotationItem.price.id : null );
 		pricing.setQuantity( Val( json.quotationItem.quantity ) ? json.quotationItem.quantity : 1 );
-		pricing.setDiscount1( Val( json.quotationItem.price.discount1 ) ? json.quotationItem.price.discount1 : 0 );
-		pricing.setDiscount2( Val( json.quotationItem.price.discount2 ) ? json.quotationItem.price.discount2 : 0 );
+		pricing.setDiscount1( parseDecimal( json.quotationItem.price.discount1 ) );
+		pricing.setDiscount2( parseDecimal( json.quotationItem.price.discount2 ) );
 
 		pricing.setMethod( method.setId( json.quotationItem.price.method.id ) );
 
         if ( json.quotationItem.price.method.id EQ 'F' ) {
-			pricing.setAmount( Val( json.quotationItem.price.total ) ? json.quotationItem.price.total : 0 );
+			pricing.setAmount( parseDecimal( json.quotationItem.price.total ) );
 		} else {
 			pricing.setAmount( 0 );
 		}
