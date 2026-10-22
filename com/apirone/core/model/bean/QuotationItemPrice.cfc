@@ -45,12 +45,8 @@ component extends="com.apirone.core.model.bean.AbsBean" accessors="true" {
 	}
 
 	public Numeric function getTotal(){
-		var totalGoods = getTotalGoods();
-		var total      = totalGoods;
-
-		if ( isFixed() ) {
-			return val(NumberFormat(getAmount(), "9.9999"));
-		}
+		// A prezzo fisso l'importo inserito è il prezzo pieno: gli sconti si applicano anche lì
+		var total = isFixed() ? Val( getAmount() ) : getTotalGoods();
 
 		if ( StructKeyExists( variables, "discount1" ) && variables.discount1 > 0 ) {
 			total = total - ( total * variables.discount1 / 100 );

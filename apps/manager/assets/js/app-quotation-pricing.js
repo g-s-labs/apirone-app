@@ -66,10 +66,7 @@ AP.quotation.itemPricing = ( function() {
                 viewModel.set("pricing.isTotalEnabled", false);
                 this.update();
             } else {
-                viewModel.set( "pricing.data.discount1", 0 );
-                viewModel.set( "pricing.data.discount2", 0 );
-                $( "[name=\"discount1\"]" ).prop( "disabled", true );
-                $( "[name=\"discount2\"]" ).prop( "disabled", true );
+                // a prezzo fisso gli sconti restano: si applicano all'importo inserito
                 viewModel.set( "pricing.data.lines", [] );
                 viewModel.set( "pricing.data.total", 0 );
                 viewModel.set("pricing.isTotalEnabled", true);
@@ -145,7 +142,14 @@ AP.quotation.itemPricing = ( function() {
 
         viewModel.set( "typeId", typeId );
 
+        $( "[name=\"discount1\"]" ).prop( "disabled", false );
+        $( "[name=\"discount2\"]" ).prop( "disabled", false );
+
         if ( data ) {
+            // a prezzo fisso il campo Totale è l'importo pieno (amount), non il totale scontato
+            if ( data.data.method.id == "F" && data.data.amount != null ) {
+                data.data.total = data.data.amount;
+            }
             if (data.data.method.id == "C") {
                 viewModel.set("pricing.isTotalEnabled", false);
             } else {
@@ -154,8 +158,6 @@ AP.quotation.itemPricing = ( function() {
             viewModel.set( "pricing", data );
         } else {
             viewModel.set( "pricing", defaultForm );
-            $( "[name=\"discount1\"]" ).prop( "disabled", false );
-            $( "[name=\"discount2\"]" ).prop( "disabled", false );
             viewModel.set("pricing.isTotalEnabled", false);
         }
 

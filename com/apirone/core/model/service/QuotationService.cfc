@@ -1243,11 +1243,8 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 						var discount1 = 0
 						var discount2 = 0
 						if (!isNull(quotationItem.getPrice())) {
-							if (quotationItem.getPrice().getAmount() > 0) {
-								price = quotationItem.getPrice().getAmount()
-							} else {
-								price = quotationItem.getPrice().getTotal()
-							}
+							// prezzo netto (sconti inclusi, anche a prezzo fisso): MMVALUNI lo riporta al lordo qui sotto
+							price = quotationItem.getPrice().getTotal()
 							if (quotationItem.getPrice().getDiscount1() > 0) {
 								discount1 = !isNull(quotationItem.getPrice().getDiscount1()) ? quotationItem.getPrice().getDiscount1() : 0
 							}

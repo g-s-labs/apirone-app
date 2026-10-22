@@ -2957,15 +2957,14 @@ AP.plate.modal = ( function() {
                 /**
                  * Gestisce il cambiamento del metodo di prezzo tra "Calcolato" e "Fisso".
                  * In modalità calcolato, azzera il totale e disabilita l'inserimento manuale.
-                 * In modalità fisso, azzera sconti e righe e abilita l'inserimento manuale del totale.
+                 * In modalità fisso, azzera le righe (gli sconti restano) e abilita l'inserimento manuale del totale.
                  */
                 changePricingMethod: function() {
                     if ( this.pricing.data.method.id === "C" ) {
                         this.pricing.data.total = 0;
                         this.pricing.isTotalEnabled = false;
                     } else {
-                        this.pricing.data.discount1 = "";
-                        this.pricing.data.discount2 = "";
+                        // a prezzo fisso gli sconti restano: si applicano all'importo inserito
                         this.pricing.data.lines = [];
                         this.pricing.data.total = 0;
                         this.pricing.isTotalEnabled = true;
@@ -3553,6 +3552,10 @@ AP.plate.modal = ( function() {
                 window.vm.pricing.data = {  ...window.vm.pricing.data, ...data.quotationItem.price };
                 if ( data.quotationItem.price.method ) {
                     window.vm.pricing.data.method = data.quotationItem.price.method;
+                }
+                // a prezzo fisso il campo Totale è l'importo pieno (amount), non il totale scontato
+                if ( data.quotationItem.price.method?.id === "F" && data.quotationItem.price.amount != null ) {
+                    window.vm.pricing.data.total = data.quotationItem.price.amount;
                 }
                 if ( window.vm.pricing.data.total != null ) {
                     window.vm.pricing.data.total = Number( window.vm.pricing.data.total ).toFixed( 2 );
