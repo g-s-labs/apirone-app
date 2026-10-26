@@ -2,12 +2,29 @@ component extends="com.apirone.core.controller.AbsController" {
 
 	function list( event, rc, prc ){
 		param rc.customerId = "";
+		listBy( event, "customer_id", rc.customerId, "customerId" );
+	}
 
+	function listByLead( event, rc, prc ){
+		param rc.leadId = "";
+		listBy( event, "lead_id", rc.leadId, "leadId" );
+	}
+
+	function listByOpportunity( event, rc, prc ){
+		param rc.opportunityId = "";
+		listBy( event, "opportunity_id", rc.opportunityId, "opportunityId" );
+	}
+
+	/**
+	 * Preventivi collegati a un record del CRM: column è customer_id, lead_id o
+	 * opportunity_id (mai input dell'utente), crmId l'id del record nel CRM.
+	 */
+	private function listBy( event, required string column, required string crmId, required string paramName ){
 		var result = super.getResult();
 
-		if ( !Len( rc.customerId ) ) {
+		if ( !Len( arguments.crmId ) ) {
 			result.setStatus( "ERROR" );
-			result.setData( { "message" = "customerId is required", "type" = "MissingParameter" } );
+			result.setData( { "message" = "#arguments.paramName# is required", "type" = "MissingParameter" } );
 			event.setValue( "result", result );
 			return;
 		}
@@ -21,9 +38,9 @@ component extends="com.apirone.core.controller.AbsController" {
 			        quotation,
 			        quotation_date
 			 FROM quotations
-			 WHERE customer_id = CAST(? AS UUID)
+			 WHERE #arguments.column# = CAST(? AS UUID)
 			 ORDER BY quotation_number DESC, version_number DESC",
-			[ { value: rc.customerId, cfsqltype: "CF_SQL_VARCHAR" } ],
+			[ { value: arguments.crmId, cfsqltype: "CF_SQL_VARCHAR" } ],
 			{ datasource: "apirone" }
 		);
 

@@ -3,7 +3,7 @@ component extends="com.apirone.core.controller.AbsController" {
 	function simulate( event, rc, prc ){
 		var result = super.service( "PriceCalculator" ).simulate( rc.id, rc.quantity, null, ListToArray( rc.itemIds ), rc.currencyId, 0, 0, null, null );
 
-		var description = prepareDescription( result.logFile );
+		var description = renderExplanation( result.explain );
 
 		var output = {
 			"price"       = result.values.finalPrice,
@@ -16,7 +16,7 @@ component extends="com.apirone.core.controller.AbsController" {
 	function simulateSignage( event, rc, prc ){
 		var result = super.service( "PriceCalculator" ).simulate( rc.id, rc.quantity, null, ListToArray( rc.itemIds ), rc.currencyId, rc.lettersQuantity, rc.simulationSignageConfigItemId, null, null );
 
-		var description = prepareDescription( result.logFile );
+		var description = renderExplanation( result.explain );
 
 		var output = {
 			"price"       = result.values.finalPrice,
@@ -181,28 +181,34 @@ component extends="com.apirone.core.controller.AbsController" {
 		private methods
 	*/
 
-	private String function prepareDescription( logFile ){
-		// Toglie le prime tre parti della riga: data e nome del prodotto
-
+	/*
+		Tabella del simula: la spiegazione di questo solo calcolo ( PriceCalculatorService.explainPricing ),
+		non il file di log, che accumula tutti i calcoli dall'avvio dell'applicazione.
+	*/
+	private String function renderExplanation( required Array rows ){
 		var result = "<table class='price-log-table'>";
-		var count  = 1;
 
-		loop file=logFile item="line" {
-			var parts = ListToArray( line, ";" );
+		for ( var row in arguments.rows ) {
+			var text   = EncodeForHTML( row.text );
+			var value  = Len( row.value ) ? row.value & " &euro;" : "";
+			var detail = Len( row.detail ) ? "<br><small class='text-muted'>" & EncodeForHTML( row.detail ) & "</small>" : "";
 
-			var td1 = parts.indexExists( 4 ) ? parts[ 4 ] : ""; // penultimate
-			var td2 = parts.indexExists( 5 ) ? parts[ 5 ] : ""; // last
-
-			var trClass = parts.indexExists( 2 ) AND parts[ 2 ] == "H" ? "price-log-table-tr-highlight" : "";
-
-			result = result
-			& "<tr class='#trClass#'>
-					<td width='25' class='text-end'>#count#</td>
-					<td>#td1#</td>
-					<td width='200' class='text-end'><b>#td2#</b></td>
-				</tr>";
-
-			count++;
+			switch ( row.kind ) {
+				case "section":
+					result &= "<tr><td colspan='2' class='pt-3'><b>#text#</b></td></tr>";
+					break;
+				case "note":
+					result &= "<tr><td colspan='2'><small class='text-muted'>#text#</small></td></tr>";
+					break;
+				case "subtotal":
+					result &= "<tr><td><b>#text#</b></td><td width='140' class='text-end'><b>#value#</b></td></tr>";
+					break;
+				case "total":
+					result &= "<tr class='price-log-table-tr-highlight'><td><b>#text#</b></td><td width='140' class='text-end'><b>#value#</b></td></tr>";
+					break;
+				default:
+					result &= "<tr><td>#text##detail#</td><td width='140' class='text-end'>#value#</td></tr>";
+			}
 		}
 
 		return result & "</table>";
