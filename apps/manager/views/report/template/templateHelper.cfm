@@ -674,6 +674,7 @@
 			"topNote":        "L'ordine si intende confermato solo dopo il ricevimento dello stesso timbrato e firmato per accettazione, dell'eventuale conferma bozze e del pagamento anticipato ove previsto",
 			"bankTitle":      "Coordinate Bancarie",
 			"bank":           "Banca",
+			"holder":         "Intestatario",
 			"readAndFill":    "Leggere e compilare",
 			"important":      "IMPORTANTE",
 			"importantIntro": "Per confermare l'ordine si prega di compilare i seguenti campi:",
@@ -697,6 +698,7 @@
 			"topNote":        "The order is confirmed only upon receipt of the same duly signed and stamped for acceptance, any proof approval, and advance payment where applicable.",
 			"bankTitle":      "Bank Details",
 			"bank":           "Bank",
+			"holder":         "Account holder",
 			"readAndFill":    "Please read and fill in",
 			"important":      "IMPORTANT",
 			"importantIntro": "To confirm the order, please fill in the following fields:",
@@ -720,6 +722,7 @@
 			"topNote":        "La commande n'est confirmée qu'à la réception du bon de commande tamponné et signé pour acceptation, de toute approbation de maquette éventuelle et du paiement anticipé si prévu.",
 			"bankTitle":      "Coordonnées Bancaires",
 			"bank":           "Banque",
+			"holder":         "Titulaire du compte",
 			"readAndFill":    "Lire et remplir",
 			"important":      "IMPORTANT",
 			"importantIntro": "Pour confirmer la commande, veuillez remplir les champs suivants :",
@@ -743,6 +746,7 @@
 			"topNote":        "El pedido se considera confirmado únicamente tras la recepción del mismo sellado y firmado como aceptación, de cualquier aprobación de prueba y del pago anticipado cuando sea necesario.",
 			"bankTitle":      "Datos Bancarios",
 			"bank":           "Banco",
+			"holder":         "Titular de la cuenta",
 			"readAndFill":    "Leer y completar",
 			"important":      "IMPORTANTE",
 			"importantIntro": "Para confirmar el pedido, por favor complete los siguientes campos:",
@@ -766,6 +770,7 @@
 			"topNote":        "Der Auftrag gilt als bestätigt erst nach Eingang desselben, gestempelt und unterschrieben zur Annahme, einer etwaigen Druckfreigabe und der Vorauszahlung, sofern vorgesehen.",
 			"bankTitle":      "Bankverbindung",
 			"bank":           "Bank",
+			"holder":         "Kontoinhaber",
 			"readAndFill":    "Bitte lesen und ausfüllen",
 			"important":      "WICHTIG",
 			"importantIntro": "Um die Bestellung zu bestätigen, füllen Sie bitte die folgenden Felder aus:",
@@ -798,9 +803,10 @@
 				<table role="table" summary="#local.t.bankTitle#">
 				<thead><tr><th colspan="2">#local.t.bankTitle#</th></tr></thead>
 				<tbody>
-					<tr><td class="label">#local.t.bank#</td><td class="value">INTESA SANPAOLO SPA<br/><small>filiale di Rimini Via della Fiera</small></td></tr>
-					<tr><td class="label">IBAN</td><td class="value">IT43 S030 6924 2321 0000 0001 234</td></tr>
-					<tr><td class="label">BIC</td><td class="value">BCITITMM</td></tr>
+					<tr><td class="label">#local.t.bank#</td><td class="value">CREDIT AGRICOLE<br/><small>C/C 000030727461 &ndash; ABI 06230 &ndash; CAB 68102</small></td></tr>
+					<tr><td class="label">IBAN</td><td class="value">IT 44 G 06230 68102 0000 3072 7461</td></tr>
+					<tr><td class="label">BIC</td><td class="value">CRPPIT2P718</td></tr>
+					<tr><td class="label">#local.t.holder#</td><td class="value">APIR SRL</td></tr>
 				</tbody>
 				</table>
 			</div>

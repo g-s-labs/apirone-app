@@ -14,11 +14,11 @@
             },
             bankAccount: {
                 bank: {
-                    name: "INTESA SANPAOLO SPA",
-                    description: "filiale di Rimini Via della Fiera"
+                    name: "CREDIT AGRICOLE",
+                    description: "C/C 000030727461 – ABI 06230 – CAB 68102"
                 },
-                iban: "IT43 S030 6924 2321 0000 0001 234",
-                bic: "BCITITMM"
+                iban: "IT 44 G 06230 68102 0000 3072 7461",
+                bic: "CRPPIT2P718"
             }
         },
         currency: "EUR",
