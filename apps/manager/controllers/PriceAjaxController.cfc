@@ -1,16 +1,9 @@
 component extends="com.apirone.core.controller.AbsController" {
 
 	function simulate( event, rc, prc ){
-		// allowMissingPrice: anche un prodotto senza prezzo si simula ( si vede il costo, il prezzo vale 0 )
-		var result = super.service( "PriceCalculator" ).simulate(
-			productId                     = rc.id,
-			quantity                      = rc.quantity,
-			producItemtIds                = ListToArray( rc.itemIds ),
-			currencyId                    = rc.currencyId,
-			lettersQuantity               = 0,
-			simulationSignageConfigItemId = 0,
-			allowMissingPrice             = true
-		);
+		// argomenti posizionali con i null espliciti: con gli argomenti per nome Lucee non accetta il default nullo di
+		// quotation ( tipo Quotation ). L'ultimo, allowMissingPrice, simula anche un prodotto senza prezzo
+		var result = super.service( "PriceCalculator" ).simulate( rc.id, rc.quantity, null, ListToArray( rc.itemIds ), rc.currencyId, 0, 0, null, null, null, null, true );
 
 		var description = renderExplanation( result.explain );
 
@@ -23,15 +16,7 @@ component extends="com.apirone.core.controller.AbsController" {
 	}
 
 	function simulateSignage( event, rc, prc ){
-		var result = super.service( "PriceCalculator" ).simulate(
-			productId                     = rc.id,
-			quantity                      = rc.quantity,
-			producItemtIds                = ListToArray( rc.itemIds ),
-			currencyId                    = rc.currencyId,
-			lettersQuantity               = rc.lettersQuantity,
-			simulationSignageConfigItemId = rc.simulationSignageConfigItemId,
-			allowMissingPrice             = true
-		);
+		var result = super.service( "PriceCalculator" ).simulate( rc.id, rc.quantity, null, ListToArray( rc.itemIds ), rc.currencyId, rc.lettersQuantity, rc.simulationSignageConfigItemId, null, null, null, null, true );
 
 		var description = renderExplanation( result.explain );
 
