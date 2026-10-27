@@ -860,6 +860,11 @@
 		<cfset var result   = {} />
 		<cfset var idsList  = ArrayToList( arguments.quotationIds ) />
 
+		<!--- nessun preventivo: niente query ( con la lista vuota diventerebbe ''::uuid, errore ) --->
+		<cfif !ArrayLen( arguments.quotationIds )>
+			<cfreturn result />
+		</cfif>
+
 		<cfquery name="local.q" datasource="apirone">
 			SELECT quotation_id, COALESCE(SUM(price * quantity), 0) AS total_amount
 			FROM quotation_items

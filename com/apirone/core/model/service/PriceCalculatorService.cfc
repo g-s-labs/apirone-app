@@ -124,7 +124,8 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		Quotation quotation = javacast("null", ""),
 		QuotationItem quotationItem = javacast("null", ""),
 		any preloadedProduct = javacast("null", ""), // "any": con il tipo Product, Lucee non casta il default nullo quando l'argomento viene omesso (es. PriceAjaxController.simulate)
-		any skipPrewarm = javacast("null", "") // true = il chiamante ha già fatto lo sweep verticale: salta i prewarm interni
+		any skipPrewarm = javacast("null", ""), // true = il chiamante ha già fatto lo sweep verticale: salta i prewarm interni
+		Boolean allowMissingPrice = false // true = senza prezzo PRICE calcola lo stesso il costo ( simula della scheda prodotto ), il prezzo vale 0
 	){
 		if ( arguments.quantity LTE 0 ) {
 			Throw(
@@ -184,7 +185,8 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			}
 		}
 		var price = product.getPrice( "PRICE" );
-		if ( IsNull( price ) ) {
+		var missingPrice = IsNull( price );
+		if ( missingPrice && !arguments.allowMissingPrice ) {
 			// messaggio rivolto all'utente: descrizione leggibile del prodotto (linea,
 			// modello, finitura), non il guid interno - vedi anche "name" più sotto,
 			// stesso pattern
@@ -232,9 +234,9 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		var settings = request._pricingMetadataMemo;
 		var generalMarkup = settings[1].getValue();
 
-		// TODO: verificare come gestire la mancanza di prezzo
-		var isFixedPrice = ( price?.getMethod()?.getId() == "F" ?: true );
-		var markup       = price?.getAmount() ?: 0;
+		// senza prezzo PRICE ( solo con allowMissingPrice ) si calcola il costo e il prezzo vale 0
+		var isFixedPrice = missingPrice ? false : ( price.getMethod()?.getId() == "F" ?: true );
+		var markup       = missingPrice ? 0 : ( price.getAmount() ?: 0 );
 
 		var name = "#product.getDescription()# (#product.getCode()#)";
 
@@ -675,7 +677,13 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			lineTypeId = "H"
 		);
 
-		if ( isFixedPrice ) {
+		if ( missingPrice ) {
+			var finalPrice = 0;
+			appendLog(
+				message    = "Nessun prezzo PRICE configurato per il prodotto: il prezzo di vendita non si calcola;Prezzo finale: #formatExtended( finalPrice )#",
+				lineTypeId = "H"
+			);
+		} else if ( isFixedPrice ) {
 			var finalPrice = ( ( bundleCost + productCost + totalCostItems ) + markup + letteringPrice ) * generalMarkup + unitFixedCost;
 			appendLog(
 				message    = "Prezzo finale fisso. ( ( bundle: #bundleCost# + prodotto: #productCost# + totale items: #totalCostItems# ) + markup: #markup# #letteringPriceString# ) * markup generale: #generalMarkup# + costo fisso: #unitFixedCost#;Prezzo finale: #formatExtended( finalPrice )#",
@@ -707,6 +715,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
 		explainPricing( {
 			"generalMarkup"      = generalMarkup,
+			"missingPrice"       = missingPrice,
 			"isFixedPrice"       = isFixedPrice,
 			"markup"             = markup,
 			"bundleCost"         = bundleCost,
@@ -738,12 +747,14 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 				"totalCostItems" = totalCostItems,
 				"totalCost"      = totalCost,
 				"unitFixedCost"  = unitFixedCost,
-				"finalPrice"     = finalPrice,
-				"priceType"      = price
+				"finalPrice"     = finalPrice
 			},
 			"currency" = "EUR",
 			"logFile" = variables.logConfig.filePath
 		};
+		if ( !missingPrice ) {
+			output.values[ "priceType" ] = price;
+		}
 
 		return output;
 	}
@@ -798,6 +809,11 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		explain( "COSTO = #fmtNum( d.componentsCost )# × markup generale #fmtFactor( g )#", d.totalCost, "total" );
 
 		explain( "Prezzo di vendita ( costo × ricarichi + costo fisso )", "", "section" );
+
+		if ( d.missingPrice ) {
+			explain( "Il prodotto non ha un prezzo ( ricarico o importo fisso dell'articolo ): il prezzo di vendita non si può calcolare. Si aggiunge da Manutenzioni → Aggiorna prezzi.", "", "note" );
+			return;
+		}
 
 		var baseCost = ( d.bundleCost + d.productCost ) * g;
 		if ( d.isFixedPrice ) {

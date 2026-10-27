@@ -1,7 +1,16 @@
 component extends="com.apirone.core.controller.AbsController" {
 
 	function simulate( event, rc, prc ){
-		var result = super.service( "PriceCalculator" ).simulate( rc.id, rc.quantity, null, ListToArray( rc.itemIds ), rc.currencyId, 0, 0, null, null );
+		// allowMissingPrice: anche un prodotto senza prezzo si simula ( si vede il costo, il prezzo vale 0 )
+		var result = super.service( "PriceCalculator" ).simulate(
+			productId                     = rc.id,
+			quantity                      = rc.quantity,
+			producItemtIds                = ListToArray( rc.itemIds ),
+			currencyId                    = rc.currencyId,
+			lettersQuantity               = 0,
+			simulationSignageConfigItemId = 0,
+			allowMissingPrice             = true
+		);
 
 		var description = renderExplanation( result.explain );
 
@@ -14,7 +23,15 @@ component extends="com.apirone.core.controller.AbsController" {
 	}
 
 	function simulateSignage( event, rc, prc ){
-		var result = super.service( "PriceCalculator" ).simulate( rc.id, rc.quantity, null, ListToArray( rc.itemIds ), rc.currencyId, rc.lettersQuantity, rc.simulationSignageConfigItemId, null, null );
+		var result = super.service( "PriceCalculator" ).simulate(
+			productId                     = rc.id,
+			quantity                      = rc.quantity,
+			producItemtIds                = ListToArray( rc.itemIds ),
+			currencyId                    = rc.currencyId,
+			lettersQuantity               = rc.lettersQuantity,
+			simulationSignageConfigItemId = rc.simulationSignageConfigItemId,
+			allowMissingPrice             = true
+		);
 
 		var description = renderExplanation( result.explain );
 

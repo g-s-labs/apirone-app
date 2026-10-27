@@ -200,12 +200,6 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 						getQuotationPriceService().delete( price.getId() );
 					}
 
-					//Elimino quotationstatushistory
-					quotationStatusHistory = getQuotationStatusHistoryService().list( quotationId = arguments.quotationId );
-					for ( var history in quotationStatusHistory ) {
-						getQuotationStatusHistoryService().delete( history.getId() );
-					}
-
 					quotationItems = getQuotationItemService().list( quotationId = arguments.quotationId );
 					for ( var item in quotationItems ) {
 						//Elimino i quotation item price
@@ -241,7 +235,18 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 					var quotationZones = getQuotationZoneService().list( quotationId = arguments.quotationId );
 
 					for ( var zone in quotationZones ) {
+						// le posizioni della zona non si cancellano in cascata con lei ( FK senza ON DELETE )
+						for ( var zonePosition in getQuotationZonePositionService().list( zoneId = zone.getId() ) ) {
+							getQuotationZonePositionService().delete( zonePosition.getId() );
+						}
 						deleteQuotationZonesRecursive( zone.getId() );
+					}
+
+					// lo storico stati per ultimo: le letture dei preventivi ( QuotationDAO.readByIds ) fanno INNER JOIN
+					// sullo stato corrente, e senza storico il preventivo non si trova più ( zone, righe ... )
+					quotationStatusHistory = getQuotationStatusHistoryService().list( quotationId = arguments.quotationId );
+					for ( var history in quotationStatusHistory ) {
+						getQuotationStatusHistoryService().delete( history.getId() );
 					}
 
 					getDao().delete( arguments.quotationId );

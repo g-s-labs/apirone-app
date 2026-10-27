@@ -260,11 +260,14 @@
                                                             <div>
                                                                 <cfif prc.product.getPrices().len() GT 0>
                                                                     <h3>Prezzi</h3>
-                                                                    #button(
-                                                                        label="Simula prezzo",
-                                                                        bind  = "click:simulatePrice",
-                                                                        size  = "sm"
-                                                                    )#
+                                                                </cfif>
+                                                                <!--- sempre: senza prezzi il simula mostra lo stesso il costo --->
+                                                                #button(
+                                                                    label="Simula prezzo",
+                                                                    bind  = "click:simulatePrice",
+                                                                    size  = "sm"
+                                                                )#
+                                                                <cfif prc.product.getPrices().len() GT 0>
                                                                     <div data-bind="source: product.prices" data-template="price-row-tmpl">
                                                                     </div>
                                                                 </cfif>
