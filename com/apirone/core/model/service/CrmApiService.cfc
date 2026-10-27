@@ -31,7 +31,7 @@ component extends="AbsRestApi" accessors="true" {
 	 */
 	public CrmApiService function init(){
 		super.init(
-			baseUrl        = "https://api.crm.apirone.it/api",
+			baseUrl        = "https://api.crm.apirstudio.com/api",
 			authToken      = getAuthToken(),
 			defaultHeaders = { "Accept" = "application/json" }
 		);
