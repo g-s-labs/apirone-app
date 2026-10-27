@@ -102,7 +102,7 @@ component extends="AbsRestApi" accessors="true" {
 	 * Metodo privato per ottenere il token auth
 	 */
 	private string function getAuthToken(){
-		return "22fc379f600a7b033769d785652419805309588e0935d110df26cd04c9cb1695";
+		return "22fc379f600a7b033769d785652419805309588e0935d110df26cd04c9cb1688";
 	}
 
 }
