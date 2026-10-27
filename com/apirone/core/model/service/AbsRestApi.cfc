@@ -118,9 +118,10 @@
 			);
 
 			Throw(
-				type    = "RestApiError",
-				message = "API non raggiungibile: #method# #apiUrl#",
-				detail  = Len( errorDetail ) ? errorDetail : "Nessuna risposta HTTP dal server."
+				type         = "RestApiError",
+				message      = "API non raggiungibile: #method# #apiUrl#",
+				detail       = Len( errorDetail ) ? errorDetail : "Nessuna risposta HTTP dal server.",
+				extendedInfo = buildCurl( method, apiUrl, requestHeaders, body )
 			);
 		}
 
@@ -157,7 +158,12 @@
 		// Lancia errore se status non 2xx
 		if ( Left( response.statusCode, 1 ) != "2" ) {
 			WriteLog( type = "error", text = "API Error: #response.statusCode# - #response.body#" );
-			Throw( type = "RestApiError", message = "API call failed: #response.statusCode# - #response.body#" );
+			Throw(
+				type         = "RestApiError",
+				message      = "API call failed: #response.statusCode# - #response.body#",
+				detail       = "URL: #method# #apiUrl#",
+				extendedInfo = buildCurl( method, apiUrl, requestHeaders, body )
+			);
 		}
 
 		return response;
@@ -217,6 +223,33 @@
 	){
 		var response = call( "PATCH", endpoint, data, headers );
 		return response.data;
+	}
+
+	/**
+	 * Comando curl equivalente alla chiamata, da rilanciare a mano per
+	 * diagnosticare un errore (finisce nell'extendedInfo dell'eccezione).
+	 */
+	private string function buildCurl(
+		required string method,
+		required string apiUrl,
+		required struct headers,
+		string body = ""
+	){
+		var parts = [ "curl -s -i -X #arguments.method#" ];
+
+		for ( var key in arguments.headers ) {
+			parts.append( "-H " & shellQuote( "#key#: #arguments.headers[ key ]#" ) );
+		}
+		if ( Len( arguments.body ) ) {
+			parts.append( "--data " & shellQuote( arguments.body ) );
+		}
+		parts.append( shellQuote( arguments.apiUrl ) );
+
+		return ArrayToList( parts, " " );
+	}
+
+	private string function shellQuote( required string value ){
+		return "'" & Replace( arguments.value, "'", "'\''", "all" ) & "'";
 	}
 
 	/**

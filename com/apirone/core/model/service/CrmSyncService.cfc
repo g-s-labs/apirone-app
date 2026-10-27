@@ -40,8 +40,15 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 				try {
 					steps[ stepName ]();
 				} catch ( any e ) {
-					attributes.logger.error( "CrmSyncService. Errore sincronizzando [#stepName#]: #e.message#" );
-					ArrayAppend( errors, "#stepName#: #e.message#" );
+					// Per gli errori delle API del CRM detail ha l'URL chiamato ed
+					// extendedInfo la curl equivalente (AbsRestApi.buildCurl):
+					// finiscono in last_error per poter rifare la chiamata a mano.
+					var errorText = e.message;
+					if ( Len( e.detail ?: "" ) ) errorText &= " | " & e.detail;
+					if ( Len( e.extendedInfo ?: "" ) ) errorText &= " | curl: " & e.extendedInfo;
+
+					attributes.logger.error( "CrmSyncService. Errore sincronizzando [#stepName#]: #errorText#" );
+					ArrayAppend( errors, "#stepName#: #errorText#" );
 				}
 			}
 
