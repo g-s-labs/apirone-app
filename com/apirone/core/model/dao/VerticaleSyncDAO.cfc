@@ -244,15 +244,31 @@
 			FROM codiva
 		</cfquery>
 
-		<cfset replaceLocalTable(
-			tableName = "verticale_vat_codes",
-			columns = [
-				{ name = "ivacod", cfsqltype = "varchar" },
-				{ name = "ivades", cfsqltype = "varchar" },
-				{ name = "ivaper", cfsqltype = "decimal" }
-			],
-			sourceQuery = local.q
-		)>
+		<!---
+			Non si svuota la tabella come per le altre copie di Verticale: la colonna active ( codici selezionabili
+			nel preventivo, 2026-10-27_gui_vat_codes_active.sql ) è solo nostra e va conservata. Si tolgono i codici
+			eliminati in Verticale, si aggiornano descrizione e percentuale, i codici nuovi arrivano non attivi.
+		--->
+		<cftransaction>
+			<cfquery datasource="apirone">
+				DELETE FROM verticale_vat_codes
+				<cfif local.q.recordCount>
+					WHERE ivacod NOT IN ( <cfqueryparam value="#ValueList( local.q.ivacod )#" list="true" cfsqltype="varchar"> )
+				</cfif>
+			</cfquery>
+
+			<cfloop query="local.q">
+				<cfquery datasource="apirone">
+					INSERT INTO verticale_vat_codes ( ivacod, ivades, ivaper )
+					VALUES (
+						<cfqueryparam value="#local.q.ivacod#" cfsqltype="varchar">,
+						<cfqueryparam value="#local.q.ivades#" cfsqltype="varchar">,
+						<cfqueryparam value="#local.q.ivaper#" cfsqltype="decimal" null="#!Len( Trim( local.q.ivaper ) )#">
+					)
+					ON CONFLICT ( ivacod ) DO UPDATE SET ivades = EXCLUDED.ivades, ivaper = EXCLUDED.ivaper
+				</cfquery>
+			</cfloop>
+		</cftransaction>
 	</cffunction>
 
 	<cffunction name="syncPaymentMethods" access="public" returntype="void">

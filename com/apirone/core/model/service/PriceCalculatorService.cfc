@@ -15,7 +15,6 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	property name="quotationItemDAO" inject="QuotationItemDAO";
 
 	variables.logConfig = {};
-	variables.costs     = [];
 
 	private function isPlaccaOrSegnaletica(product)
 	{
@@ -138,25 +137,28 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		// bindato e la chiave non esisterebbe; da qui in poi passa solo un booleano.
 		var doSkipPrewarm = StructKeyExists( arguments, "skipPrewarm" ) && !IsNull( arguments.skipPrewarm ) && arguments.skipPrewarm;
 
-		variables.costs     = [];
 		// spiegazione leggibile di QUESTO calcolo ( mostrata nel simula ), separata dal log di debug su file
 		request._priceExplain = [];
 
 		/*
 			INFO:
 
-			c1 = componenti bundle ( linea / modello )
-			c2 = componenti prodotto
-			cA = componenti attributi ( senza ricarico )
-			cL = componenti lettering ( per lettera × lettere, senza ricarico )
-			G  = markup generale ( metadata 107 )
+			Σ  = componenti di 1 pezzo: linea / modello + prodotto + attributi + lettering ( per lettera × lettere )
+			cB = componenti linea / modello + prodotto
+			cA = componenti di ogni attributo ( nel lettering per lettera × lettere )
+			M  = markup dell'articolo ( PRICE M )
+			MA = ricarico dell'attributo: quello della riga ( PROD_ITEM_PRICE M ), altrimenti il markup
+			     dell'articolo ( vedi itemMarkup() ). PROD_ITEM_GEN non si usa: è sempre uguale al prezzo dell'articolo
+			FA = prezzi fissi degli attributi ( PROD_ITEM_PRICE F, anche per lettera × lettere )
+			G  = markup generale ( metadata 107: corrente, affitti, personale... )
 
-			costo  = ( c1 + c2 + cA + cL ) × G
+			costo  = Σ × G
 
-			prezzo = ( ( c1 + c2 ) × ricarico articolo ( PRICE M ), oppure ( c1 + c2 ) + importo fisso ( PRICE F )
-					 + attributi ricaricati ( PROD_ITEM_PRICE / PROD_ITEM_GEN, o prezzo fisso dell'attributo )
-					 + lettering ricaricato ) × G
-					 + costo fisso unitario ( quota del prezzo: non entra nel costo, niente markup )
+			prezzo = ( cB × M + Σ( cA × MA ) + FA ) × G + costo fisso / pezzi
+			         con l'articolo a importo fisso ( PRICE F ): ( cB + importo + Σ( cA × MA ) + FA ) × G + costo fisso / pezzi
+			         ( qui l'attributo senza ricarico proprio vale i suoi componenti, MA = 1 )
+
+			Il costo fisso / pezzi è una quota del prezzo: non entra nel costo, niente markup.
 		*/
 
 		var markup = 0;
@@ -370,7 +372,6 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
 		// il costo fisso, nonostante il nome, è una quota del prezzo di vendita: non entra nel costo di
 		// produzione e si aggiunge al prezzo alla fine, senza markup generale né ricarichi
-		addCost( "Costo fisso", unitFixedCost, "P" );
 
 		/*
 			cost bundle
@@ -394,12 +395,6 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		// il log viene scritto da in calculateComponentsTotal()
 		// appendLog( "Costo componenti per bundle;Totale attributi: #formatExtended( bundleCost )#" );
 
-		addCost(
-			"Costo componenti linea / modello",
-			bundleCost,
-			"P"
-		);
-
 		/*
 			cost base product
 		*/
@@ -411,13 +406,9 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
 		// appendLog( message = "Costo componenti prodotto #productComponents#;Totale unitario: #formatExtended( productCost )#" );
 
-		addCost( "Costo componenti prodotto", productCost, "P" );
-
 		/*
 			cost items
 		*/
-
-		var attributePrice = product.getPrice( "PROD_ITEM_GEN" );
 
 		appendLog( "** Inizio del calcolo del prezzo degli attributi: #ArrayToList(productItemIds)#" );
 
@@ -459,9 +450,15 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			? componentSvc.priceCalculatorSearchByProductItemIds( productItemIds, doSkipPrewarm )
 			: {};
 
-		// costo puro degli attributi ( componenti senza ricarico ): è quello che entra nel costo,
-		// mentre il valore ricaricato ( markup o prezzo fisso dell'attributo ) entra solo nel prezzo
+		// ricarico degli attributi senza ricarico proprio: il markup dell'articolo ( 1 se l'articolo ha un importo fisso )
+		var articleItemMarkup = isFixedPrice ? 1 : markup;
+
+		// costo dei componenti degli attributi: entra nel costo
 		var pureItemsCost = 0;
+		// componenti degli attributi × il loro ricarico: entra nel prezzo
+		var itemsValue = 0;
+		// somma dei prezzi fissi degli attributi ( PROD_ITEM_PRICE F ): solo prezzo
+		var itemsFixedPrice = 0;
 		// dati per la spiegazione: un elemento per attributo
 		var itemsInfo = [];
 
@@ -469,8 +466,6 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			var itemComponents = StructKeyExists( itemComponentsMap, itemId )
 				? itemComponentsMap[ itemId ]
 				: [];
-
-			var itemCost = 0;
 
 			var productItem = StructKeyExists( productItemMap, itemId )
 				? productItemMap[ itemId ]
@@ -484,95 +479,42 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			var compCost = calculateComponentsTotal( itemComponents, "ProductItem" );
 			pureItemsCost += compCost;
 
-			var productItemPrice = productItem.getPrice( "PROD_ITEM_PRICE" );
+			// nel prezzo i componenti dell'attributo valgono × il suo ricarico; il prezzo fisso dell'attributo
+			// ( PROD_ITEM_PRICE F ) si somma a parte
+			var itemMarkupInfo = itemMarkup( productItem, articleItemMarkup );
+			var itemValue      = compCost * itemMarkupInfo.markup;
+			itemsValue += itemValue;
 
-			var priceProcessed = false;
-			// per la spiegazione: F = prezzo fisso dell'attributo, M = ricarico, N = nessun ricarico configurato
-			var itemMode   = "N";
-			var itemMarkup = 0;
+			var itemFixedPrice = fixedItemPrice( productItem );
+			itemsFixedPrice += itemFixedPrice;
 
-			if ( !IsNull( productItemPrice ) ) {
-				var amount = productItemPrice.getAmount() ?: 0;
-
-				if ( productItemPrice.getMethod().getId() == "F" ) {
-					appendLog(
-						message = "#attributeName#. Prezzo -fisso- per questo attributo: #productItemPrice.getAmount()# ( costo componenti: #compCost# );Valore attributo: #formatExtended( amount )#"
-					);
-
-					itemCost = amount;
-					itemMode = "F";
-					itemMarkup = amount;
-					priceProcessed = true;
-				} else if ( productItemPrice.getMethod().getId() == "M" ) {
-					itemCost = compCost * productItemPrice.getAmount();
-					itemMode = "M";
-					itemMarkup = amount;
-
-					appendLog(
-						message = "#attributeName#. Markup per questo attributo: #productItemPrice.getAmount()#. Totale componenti: #compCost# * markup: #productItemPrice.getAmount()#;Valore attributo: #formatExtended( itemCost )#"
-					);
-
-					priceProcessed = true;
-				}
-			} else {
-				if ( !IsNull( attributePrice ) ) {
-					var amount = attributePrice.getAmount() ?: 0;
-
-					itemCost = compCost * amount;
-					itemMode = "M";
-					itemMarkup = amount;
-
-					appendLog(
-						message = "Markup generale per questo attributo: #productItem.getId()#. Totale componenti: #compCost# * markup: #amount#;Valore attributo: #formatExtended( itemCost )#"
-					);
-
-					priceProcessed = true;
-				}
-			}
-
-			if ( !priceProcessed ) {
-				appendLog(
-					message = "ATTENZIONE: Nessun prezzo (nè generale, nè specifico) trovato per l'attributo #attributeName# (id: #itemId#), nel prezzo vale 0 ( costo componenti: #compCost# );Valore attributo: 0"
-				);
-			}
-
-			addCost( "Costo attributo #itemId#", itemCost, "I" );
+			appendLog(
+				message = "#attributeName#. Totale componenti: #compCost# * ricarico ( #itemMarkupInfo.source# ): #itemMarkupInfo.markup#" & ( itemFixedPrice > 0 ? " + prezzo fisso attributo: #itemFixedPrice#" : "" ) & ";Valore attributo: #formatExtended( itemValue + itemFixedPrice )#"
+			);
 
 			itemsInfo.append( {
-				"label"  = attributeLabel( productItem ),
-				"cost"   = compCost,
-				"value"  = itemCost,
-				"mode"   = itemMode,
-				"markup" = itemMarkup,
-				"detail" = componentsDetail( itemComponents )
+				"label"      = attributeLabel( productItem ),
+				"cost"       = compCost,
+				"value"      = itemValue,
+				"markup"     = itemMarkupInfo.markup,
+				"source"     = itemMarkupInfo.source,
+				"fixedPrice" = itemFixedPrice,
+				"detail"     = componentsDetail( itemComponents )
 			} );
 		}
 
-		appendLog( "** Fine del calcolo del prezzo degli attributi; Valore attributi: #formatExtended( calculateTotalCostItems() )#, costo componenti: #formatExtended( pureItemsCost )#" );
-
-		/*
-			base cost: solo bundle + prodotto ( senza attributi e lettering, il costo totale è più sotto )
-		*/
-
-		var baseCost = bundleCost + productCost;
-
-		appendLog(
-			message    = "Costo base ( senza attributi e lettering ). Bundle: #bundleCost# + prodotto base: #productCost#;Costo base: #formatExtended( baseCost )#"
-		);
-
-		/*
-			final price
-		*/
-
-		var totalCostItems = calculateTotalCostItems();
+		appendLog( "** Fine del calcolo degli attributi; costo componenti: #formatExtended( pureItemsCost )#, valore ricaricato: #formatExtended( itemsValue )#, prezzi fissi: #formatExtended( itemsFixedPrice )#" );
 
 		/*
 			font price
 		*/
 
-		var letteringPrice = 0;
-		// costo puro del lettering ( componenti per lettera senza ricarico degli attributi )
+		// componenti del lettering ( per lettera × lettere ): entrano nel costo
 		var letteringCost = 0;
+		// gli stessi × il ricarico di ogni attributo ( il formato × il markup dell'articolo ): entrano nel prezzo
+		var letteringValue = 0;
+		// prezzi fissi degli attributi per lettera × lettere: solo prezzo
+		var letteringFixedPrice = 0;
 		// per la spiegazione: componenti del formato ( per lettera ) e attributi per lettera
 		var letterFormatCost   = 0;
 		var letterFormatDetail = "";
@@ -580,8 +522,9 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		var letterSizesLabel   = "";
 		if ( lettersQuantity > 0 && simulationSignageConfigItemId GT 0 ) {
 			appendLog( "** Inizio del calcolo del prezzo della segnaletica con lettering con #lettersQuantity# lettere;" );
-			var fontPricePerLetter = 0;
-			var fontCostPerLetter  = 0;
+			var fixedPricePerLetter = 0;
+			var fontCostPerLetter   = 0;
+			var valuePerLetter      = 0;
 			var signageConfigItemSvc = super.service( "SignageConfigItem" );
 			var signageConfigSvc = super.service( "SignageConfig" );
 			var signageConfigItem    = signageConfigItemSvc.get( simulationSignageConfigItemId );
@@ -627,10 +570,11 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 				if ( Len( productItemIds ) ) {
 					//costo componenti items segnaletica
 					for ( var productItemId in productItemIds ) {
-						var signageItem = calculateSignageProductItemPrice( signageItemProduct = { productItemId = productItemId, signageConfigItemId = simulationSignageConfigItemId }, attributePrice = attributePrice, sizes = sizes );
-						fontPricePerLetter += signageItem.price;
-						fontCostPerLetter  += signageItem.cost;
-						if ( signageItem.cost > 0 || signageItem.price > 0 ) {
+						var signageItem = calculateSignageProductItemPrice( signageItemProduct = { productItemId = productItemId, signageConfigItemId = simulationSignageConfigItemId }, sizes = sizes, articleItemMarkup = articleItemMarkup );
+						fixedPricePerLetter += signageItem.fixedPrice;
+						fontCostPerLetter   += signageItem.cost;
+						valuePerLetter      += signageItem.value;
+						if ( signageItem.cost > 0 || signageItem.fixedPrice > 0 ) {
 							letterItems.append( signageItem );
 						}
 					}
@@ -644,38 +588,33 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 						skipPrewarm = doSkipPrewarm
 					);
 
-					// componenti del formato: senza ricarico, valgono uguale per prezzo e costo
+					// componenti del formato: × il markup dell'articolo
 					var signageBundleCost = calculateComponentsTotal( signageBundleComponents, "SignageConfigItem" );
-					fontPricePerLetter += signageBundleCost;
 					fontCostPerLetter  += signageBundleCost;
+					valuePerLetter     += signageBundleCost * articleItemMarkup;
 					letterFormatCost   = signageBundleCost;
 					letterFormatDetail = componentsDetail( signageBundleComponents );
 				}
 
-				addCost(
-					"Costo componenti Segnaletica",
-					fontPricePerLetter,
-					"P"
-				);
-
-				letteringPrice = fontPricePerLetter * lettersQuantity;
-				letteringCost  = fontCostPerLetter * lettersQuantity;
+				letteringCost       = fontCostPerLetter * lettersQuantity;
+				letteringValue      = valuePerLetter * lettersQuantity;
+				letteringFixedPrice = fixedPricePerLetter * lettersQuantity;
 			}
 
-			appendLog( "** Fine del calcolo del prezzo della segnaletica con lettering; Valore per lettera: #formatExtended( fontPricePerLetter )# ( costo #formatExtended( fontCostPerLetter )# ), Valore totale lettering: #formatExtended( letteringPrice )# ( costo #formatExtended( letteringCost )# )" );
+			appendLog( "** Fine del calcolo della segnaletica con lettering. Per lettera: costo #formatExtended( fontCostPerLetter )#, valore ricaricato #formatExtended( valuePerLetter )#, prezzi fissi #formatExtended( fixedPricePerLetter )#; Totale lettering: costo #formatExtended( letteringCost )#, valore #formatExtended( letteringValue )#, prezzi fissi #formatExtended( letteringFixedPrice )#" );
 		}
 
-		letteringPriceString = letteringPrice GT 0 ? "+ lettering: #formatExtended( letteringPrice )#": "";
-
-		// costo: componenti senza ricarichi di articolo / attributi, moltiplicati per il markup generale.
-		// Il prezzo qui sotto non cambia: è lo stesso costo ( × markup generale ) per i ricarichi
-		// il costo fisso non entra: è una quota del prezzo di vendita ( vedi sotto )
+		// costo: tutti i componenti per il markup generale ( corrente, affitti, personale... ).
+		// Il costo fisso non entra: è una quota del prezzo di vendita ( vedi sotto )
 		var componentsCost = bundleCost + productCost + pureItemsCost + letteringCost;
 		var totalCost      = componentsCost * generalMarkup;
 		appendLog(
 			message    = "Costo finale: ( bundle: #bundleCost# + prodotto: #productCost# + componenti attributi: #pureItemsCost# + lettering: #letteringCost# ) * markup generale: #generalMarkup#;Costo finale: #formatExtended( totalCost )#",
 			lineTypeId = "H"
 		);
+
+		// prezzi fissi degli attributi ( anche per lettera ): si sommano prima del markup generale
+		var fixedPrices = itemsFixedPrice + letteringFixedPrice;
 
 		if ( missingPrice ) {
 			var finalPrice = 0;
@@ -684,15 +623,17 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 				lineTypeId = "H"
 			);
 		} else if ( isFixedPrice ) {
-			var finalPrice = ( ( bundleCost + productCost + totalCostItems ) + markup + letteringPrice ) * generalMarkup + unitFixedCost;
+			// ricarico dell'articolo a importo fisso: si somma ai componenti di linea / modello + prodotto
+			var finalPrice = ( bundleCost + productCost + markup + itemsValue + letteringValue + fixedPrices ) * generalMarkup + unitFixedCost;
 			appendLog(
-				message    = "Prezzo finale fisso. ( ( bundle: #bundleCost# + prodotto: #productCost# + totale items: #totalCostItems# ) + markup: #markup# #letteringPriceString# ) * markup generale: #generalMarkup# + costo fisso: #unitFixedCost#;Prezzo finale: #formatExtended( finalPrice )#",
+				message    = "Prezzo finale fisso. ( bundle: #bundleCost# + prodotto: #productCost# + importo articolo: #markup# + attributi ricaricati: #itemsValue# + lettering ricaricato: #letteringValue# + prezzi fissi attributi: #fixedPrices# ) * markup generale: #generalMarkup# + costo fisso: #unitFixedCost#;Prezzo finale: #formatExtended( finalPrice )#",
 				lineTypeId = "H"
 			);
 		} else {
-			var finalPrice = ( ( ( bundleCost + productCost ) * markup ) + totalCostItems + letteringPrice ) * generalMarkup + unitFixedCost;
+			// prezzo = ( ( linea / modello + prodotto ) × markup articolo + attributi × loro ricarico + prezzi fissi ) × markup generale + costo fisso / pezzi
+			var finalPrice = ( ( bundleCost + productCost ) * markup + itemsValue + letteringValue + fixedPrices ) * generalMarkup + unitFixedCost;
 			appendLog(
-				message    = "Prezzo finale. ( ( ( bundle: #bundleCost# + prodotto: #productCost# ) * markup: #markup# ) + totale items: #totalCostItems# #letteringPriceString# ) * markup generale: #generalMarkup# + costo fisso: #unitFixedCost#;Prezzo finale: #formatExtended( finalPrice )#",
+				message    = "Prezzo finale. ( ( bundle: #bundleCost# + prodotto: #productCost# ) * markup articolo: #markup# + attributi ricaricati: #itemsValue# + lettering ricaricato: #letteringValue# + prezzi fissi attributi: #fixedPrices# ) * markup generale: #generalMarkup# + costo fisso: #unitFixedCost#;Prezzo finale: #formatExtended( finalPrice )#",
 				lineTypeId = "H"
 			);
 		}
@@ -714,37 +655,44 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		// }
 
 		explainPricing( {
-			"generalMarkup"      = generalMarkup,
-			"missingPrice"       = missingPrice,
-			"isFixedPrice"       = isFixedPrice,
-			"markup"             = markup,
-			"bundleCost"         = bundleCost,
-			"bundleDetail"       = bundleDetail,
-			"productCost"        = productCost,
-			"productDetail"      = productDetail,
-			"items"              = itemsInfo,
-			"unitFixedCost"      = unitFixedCost,
-			"fixedCostDetail"    = ArrayToList( fixedCostParts, " + " ),
-			"lettersQuantity"    = lettersQuantity,
-			"letterSizesLabel"   = letterSizesLabel,
-			"letterFormatCost"   = letterFormatCost,
-			"letterFormatDetail" = letterFormatDetail,
-			"letterItems"        = letterItems,
-			"letteringCost"      = letteringCost,
-			"letteringPrice"     = letteringPrice,
-			"componentsCost"     = componentsCost,
-			"totalCost"          = totalCost,
-			"finalPrice"         = finalPrice
+			"generalMarkup"       = generalMarkup,
+			"missingPrice"        = missingPrice,
+			"isFixedPrice"        = isFixedPrice,
+			"markup"              = markup,
+			"bundleCost"          = bundleCost,
+			"bundleDetail"        = bundleDetail,
+			"productCost"         = productCost,
+			"productDetail"       = productDetail,
+			"items"               = itemsInfo,
+			"unitFixedCost"       = unitFixedCost,
+			"fixedCostDetail"     = ArrayToList( fixedCostParts, " + " ),
+			"lettersQuantity"     = lettersQuantity,
+			"letterSizesLabel"    = letterSizesLabel,
+			"letterFormatCost"    = letterFormatCost,
+			"letterFormatDetail"  = letterFormatDetail,
+			"letterItems"         = letterItems,
+			"letteringCost"       = letteringCost,
+			"letteringValue"      = letteringValue,
+			"letteringFixedPrice" = letteringFixedPrice,
+			"itemsValue"          = itemsValue,
+			"componentsCost"      = componentsCost,
+			"fixedPrices"         = fixedPrices,
+			"totalCost"           = totalCost,
+			"finalPrice"          = finalPrice
 		} );
 
 		var output = {
 			"explain" = request._priceExplain,
 			values = {
 				"finalCost"      = totalCost,
-				"baseCost"       = baseCost,
+				"componentsCost" = componentsCost,
 				"bundleCost"     = bundleCost,
 				"productCost"    = productCost,
-				"totalCostItems" = totalCostItems,
+				"itemsCost"      = pureItemsCost,
+				"letteringCost"  = letteringCost,
+				"itemsValue"     = itemsValue,
+				"letteringValue" = letteringValue,
+				"fixedPrices"    = fixedPrices,
 				"totalCost"      = totalCost,
 				"unitFixedCost"  = unitFixedCost,
 				"finalPrice"     = finalPrice
@@ -761,9 +709,9 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
 	/*
 		Spiegazione del calcolo per il simula: due blocchi, costo e prezzo, una riga per voce con
-		i componenti in piccolo sotto ( così non si sommano due volte ). Il prezzo è scritto come
-		costo ( × markup generale ) × ricarico di ogni voce, più il costo fisso alla fine: è la
-		stessa formula di simulate(), raccolta voce per voce, e il totale mostrato è finalPrice.
+		i componenti in piccolo sotto. Nel prezzo ogni voce è × il suo ricarico ( articolo o attributo ),
+		poi tutto × markup generale, più il costo fisso: è la stessa formula di simulate() e il totale
+		mostrato è finalPrice.
 	*/
 	private void function explainPricing( required Struct d ){
 		var g = d.generalMarkup;
@@ -808,48 +756,55 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		explain( "Totale componenti", d.componentsCost, "subtotal" );
 		explain( "COSTO = #fmtNum( d.componentsCost )# × markup generale #fmtFactor( g )#", d.totalCost, "total" );
 
-		explain( "Prezzo di vendita ( costo × ricarichi + costo fisso )", "", "section" );
+		explain( "Prezzo di vendita ( componenti × ricarichi × markup generale + costo fisso )", "", "section" );
 
 		if ( d.missingPrice ) {
 			explain( "Il prodotto non ha un prezzo ( ricarico o importo fisso dell'articolo ): il prezzo di vendita non si può calcolare. Si aggiunge da Manutenzioni → Aggiorna prezzi.", "", "note" );
 			return;
 		}
 
-		var baseCost = ( d.bundleCost + d.productCost ) * g;
+		var productComponents = d.bundleCost + d.productCost;
+		var baseValue = d.isFixedPrice ? productComponents + d.markup : productComponents * d.markup;
 		if ( d.isFixedPrice ) {
-			explain( "Linea / modello + prodotto", baseCost, "row", "#fmtNum( d.bundleCost + d.productCost )# × #fmtFactor( g )#, nessun ricarico ( l'articolo ha un ricarico a importo fisso )" );
-			explain( "Ricarico articolo a importo fisso", d.markup * g, "row", "#fmtNum( d.markup )# € × #fmtFactor( g )#" );
+			explain( "Linea / modello + prodotto + importo fisso articolo", baseValue, "row", "#fmtNum( productComponents )# + #fmtNum( d.markup )# €" );
 		} else {
-			explain( "Linea / modello + prodotto", baseCost * d.markup, "row", "#fmtNum( d.bundleCost + d.productCost )# × #fmtFactor( g )# = #fmtNum( baseCost )# × ricarico articolo #fmtFactor( d.markup )#" );
+			explain( "Linea / modello + prodotto", baseValue, "row", "#fmtNum( productComponents )# × markup articolo #fmtFactor( d.markup )#" );
 		}
 
 		for ( var item in d.items ) {
-			if ( item.mode == "F" ) {
-				explain( "Attributo #item.label#", item.value * g, "row", "prezzo fisso dell'attributo #fmtNum( item.markup )# € × #fmtFactor( g )#" );
-			} else if ( item.cost > 0 ) {
-				if ( item.mode == "M" && item.markup > 0 ) {
-					explain( "Attributo #item.label#", item.value * g, "row", "#fmtNum( item.cost )# × #fmtFactor( g )# = #fmtNum( item.cost * g )# × ricarico attributo #fmtFactor( item.markup )#" );
-				} else {
-					explain( "Attributo #item.label#", 0, "row", "ricarico attributo assente o 0: non entra nel prezzo" );
-				}
+			if ( item.cost > 0 ) {
+				explain( "Attributo #item.label#", item.value, "row", "#fmtNum( item.cost )# × #fmtFactor( item.markup )# ( #item.source# )" );
+			}
+			if ( item.fixedPrice > 0 ) {
+				explain( "Prezzo fisso attributo #item.label#", item.fixedPrice, "row" );
 			}
 		}
 
 		if ( d.lettersQuantity > 0 ) {
-			var letterValue  = d.lettersQuantity ? d.letteringPrice / d.lettersQuantity : 0;
 			var letterDetail = [];
 			if ( d.letterFormatCost > 0 ) {
-				letterDetail.append( "formato #fmtNum( d.letterFormatCost )# × #fmtFactor( g )#" );
+				letterDetail.append( "formato #fmtNum( d.letterFormatCost )# × #fmtFactor( d.isFixedPrice ? 1 : d.markup )#" );
 			}
 			for ( var letterItem in d.letterItems ) {
-				if ( letterItem.mode == "F" ) {
-					letterDetail.append( "#letterItem.label#: prezzo fisso #fmtNum( letterItem.price )# € × #fmtFactor( g )#" );
-				} else {
-					letterDetail.append( "#letterItem.label#: #fmtNum( letterItem.cost )# × #fmtFactor( g )# × ricarico #fmtFactor( letterItem.markup )#" );
+				if ( letterItem.cost > 0 ) {
+					letterDetail.append( "#letterItem.label#: #fmtNum( letterItem.cost )# × #fmtFactor( letterItem.markup )# ( #letterItem.source# )" );
 				}
 			}
-			explain( "Lettering: #d.lettersQuantity# lettere × #fmtNum( letterValue * g )# €", d.letteringPrice * g, "row", ArrayToList( letterDetail, " + " ) );
+			explain( "Lettering: #d.lettersQuantity# lettere × #fmtNum( d.letteringValue / d.lettersQuantity )# €", d.letteringValue, "row", ArrayToList( letterDetail, " + " ) );
+
+			if ( d.letteringFixedPrice > 0 ) {
+				var letterFixedDetail = [];
+				for ( var letterItem in d.letterItems ) {
+					if ( letterItem.fixedPrice > 0 ) {
+						letterFixedDetail.append( "#letterItem.label#: #fmtNum( letterItem.fixedPrice )# €" );
+					}
+				}
+				explain( "Prezzi fissi attributi lettering: #d.lettersQuantity# lettere × #fmtNum( d.letteringFixedPrice / d.lettersQuantity )# €", d.letteringFixedPrice, "row", ArrayToList( letterFixedDetail, " + " ) );
+			}
 		}
+
+		var beforeGeneral = baseValue + d.itemsValue + d.letteringValue + d.fixedPrices;
+		explain( "#fmtNum( beforeGeneral )# × markup generale #fmtFactor( g )#", beforeGeneral * g, "subtotal" );
 
 		if ( d.unitFixedCost > 0 ) {
 			explain( "Costo fisso ( quota del prezzo, senza markup )", d.unitFixedCost, "row", d.fixedCostDetail );
@@ -949,18 +904,6 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		return total;
 	}
 
-	private Void function addCost(
-		required String label,
-		required Numeric amount,
-		required String typeId = "P"
-	){
-		variables.costs.add( {
-			"label"  = arguments.label,
-			"amount" = arguments.amount,
-			"typeId" = arguments.typeId
-		} );
-	}
-
 	private Void function appendLog(
 		required String message,
 		String productId,
@@ -1031,75 +974,43 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		return logConfig;
 	}
 
-	private Numeric function calculateTotalCostItems(){
-		var total = 0;
-
-		for ( var item in variables.costs ) {
-			if ( item.typeId EQ "I" ) {
-				total = total + item.amount
-			}
-		}
-
-		return total;
-	}
-
 	private Numeric function formatExtended( required Numeric value ){
 		return NumberFormat( value, ".9999" );
 	}
 
-	private function calculateSignageProductItemPrice( Struct signageItemProduct, attributePrice, sizes ){
+	/*
+		Attributo della segnaletica con lettering, per una lettera: cost = componenti ( entrano nel costo ),
+		value = componenti × ricarico dell'attributo ( itemMarkup(), entra nel prezzo ), fixedPrice = prezzo
+		fisso dell'attributo ( solo prezzo ).
+	*/
+	private function calculateSignageProductItemPrice( Struct signageItemProduct, sizes, required numeric articleItemMarkup ){
 		componentSvc = getComponentService();
 		var itemComponents = componentSvc.priceCalculatorSearch( signageItemProduct = signageItemProduct );
-		if ( Len( itemComponents ) EQ 0 ) {
-			return { "price" = 0, "cost" = 0 };
-		}
-		var itemCost = 0;
 		var compCost = 0;
 		// per la spiegazione: un pezzo di testo per ogni componente che entra nel costo per lettera
 		var detailParts = [];
 
 		//recupero il product item id dalla struttura che uso per recuperare i componenti
 		var itemId = signageItemProduct.productItemId;
-		// Carica il productItem via batch getMany() per evitare cascata N+1
-		var piMap = getProductItemService().getMany( [ itemId ] );
-		var productItem = StructKeyExists( piMap, itemId )
-			? piMap[ itemId ]
-			: getProductItemService().get( itemId );
+		// il productItem è già nella memo della richiesta ( caricato da simulate() con gli attributi )
+		var productItem = NullValue();
+		if ( StructKeyExists( request, "_pricingItemBeanMemo" ) && StructKeyExists( request._pricingItemBeanMemo, itemId ) ) {
+			productItem = request._pricingItemBeanMemo[ itemId ];
+		} else {
+			var piMap = getProductItemService().getMany( [ itemId ] );
+			productItem = StructKeyExists( piMap, itemId )
+				? piMap[ itemId ]
+				: getProductItemService().get( itemId );
+		}
 
 		var attributeName = "Signage Item: #itemId#, Attributo: #productItem.getAttribute().getName()# / #productItem
 			.getAttributeValue()
 			.getRawValue()
 			.getName()#";
 
-		// recupero il price specifico per l'item se presente
-		var productItemPrice = productItem.getPrice( "PROD_ITEM_PRICE" );
-		var priceProcessed = false;
+		var fixedPrice     = fixedItemPrice( productItem );
+		var itemMarkupInfo = itemMarkup( productItem, arguments.articleItemMarkup );
 
-		var markup = 0;
-		if ( !IsNull( productItemPrice ) ) {
-			// imposto il markup specifico per l'item
-			markup = productItemPrice.getAmount();
-
-			//se product item price è fisso il prezzo è l'importo fisso ( i componenti servono solo per il costo )
-			if ( productItemPrice.getMethod().getId() == "F" ) {
-				appendLog(
-					message = "#attributeName#. Prezzo -fisso- per questo attributo: #productItemPrice.getAmount()#;Valore attributo: #formatExtended( markup )#"
-				);
-
-				itemCost = markup;
-				priceProcessed = true;
-			}
-		//se non è presente un price specifico per l'item o se esiste ma è percentuale e non fisso, uso il markup generale
-		} else {
-			if ( !IsNull( attributePrice ) ) {
-				markup = attributePrice.getAmount();
-			}
-		}
-
-		// per ora forzo il markup a 1 se è zero
-		markup = markup > 0 ? markup : 1
-		// costo dei componenti per lettera: calcolato sempre, anche con prezzo fisso dell'attributo,
-		// perché è il costo di produzione ( il ricarico entra solo nel prezzo )
 		for ( var itemComponent in itemComponents ) {
 			var actualComponentCost = 0;
 			var itemComponentCost = itemComponent.costAmount;
@@ -1172,27 +1083,40 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
 		}
 
-		if ( priceProcessed ) {
-			appendLog(
-				message = "Prezzo fisso per questo attributo: #productItem.getId()#. Costo componenti: #compCost#;Valore attributo: #formatExtended( itemCost )#"
-			);
-		} else {
-			itemCost = compCost * markup;
-			appendLog(
-				message = "Markup generale per questo attributo: #productItem.getId()#. Totale componenti: #compCost# * markup: #markup#;Valore attributo: #formatExtended( itemCost )#"
-			);
-		}
+		var itemValue = compCost * itemMarkupInfo.markup;
+		appendLog(
+			message = "#attributeName#. Totale componenti per lettera: #compCost# * ricarico ( #itemMarkupInfo.source# ): #itemMarkupInfo.markup#" & ( fixedPrice > 0 ? " + prezzo fisso attributo: #fixedPrice#" : "" ) & ";Valore attributo per lettera: #formatExtended( itemValue + fixedPrice )#"
+		);
 
-		addCost( "Costo attributo #itemId#", itemCost, "I" );
-		// price = valore per lettera ricaricato ( entra nel prezzo ), cost = componenti per lettera ( entra nel costo )
 		return {
-			"price"  = itemCost,
-			"cost"   = compCost,
-			"label"  = attributeLabel( productItem ),
-			"detail" = ArrayToList( detailParts, "; " ),
-			"mode"   = priceProcessed ? "F" : "M",
-			"markup" = markup
+			"cost"       = compCost,
+			"value"      = itemValue,
+			"markup"     = itemMarkupInfo.markup,
+			"source"     = itemMarkupInfo.source,
+			"fixedPrice" = fixedPrice,
+			"label"      = attributeLabel( productItem ),
+			"detail"     = ArrayToList( detailParts, "; " )
 		};
+	}
+
+	/*
+		Ricarico di un attributo nel prezzo: quello della riga ( PROD_ITEM_PRICE M ), altrimenti il markup
+		dell'articolo ( articleItemMarkup: 1 se l'articolo ha un importo fisso ). Un ricarico a 0 non conta.
+		source serve alla spiegazione. Il ricarico generale degli attributi ( PROD_ITEM_GEN ) non si usa: nei
+		dati è sempre uguale al prezzo dell'articolo ( 2026-10-28 ), verrà rimosso.
+	*/
+	private Struct function itemMarkup( required productItem, required numeric articleItemMarkup ){
+		var itemPrice = arguments.productItem.getPrice( "PROD_ITEM_PRICE" );
+		if ( !IsNull( itemPrice ) && itemPrice.getMethod().getId() == "M" && Val( itemPrice.getAmount() ?: 0 ) > 0 ) {
+			return { "markup" = itemPrice.getAmount(), "source" = "ricarico attributo" };
+		}
+		return { "markup" = arguments.articleItemMarkup, "source" = "markup articolo" };
+	}
+
+	/* Prezzo fisso di un attributo ( PROD_ITEM_PRICE F ), 0 se non ce l'ha */
+	private Numeric function fixedItemPrice( required productItem ){
+		var itemPrice = arguments.productItem.getPrice( "PROD_ITEM_PRICE" );
+		return !IsNull( itemPrice ) && itemPrice.getMethod().getId() == "F" ? ( itemPrice.getAmount() ?: 0 ) : 0;
 	}
 
 	/**

@@ -25,7 +25,9 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 
 	public com.apirone.core.model.bean.Result function search(
 		required Numeric limit  = 50,
-		required Numeric offset = 0
+		required Numeric offset = 0,
+		Boolean activeOnly      = false, // solo i codici selezionabili ( verticale_vat_codes.active )
+		String includeId        = ""     // con activeOnly: anche questo codice, se non attivo ( quello del preventivo aperto )
 	){
 		var rows   = [];
 		var result = super.getResult();

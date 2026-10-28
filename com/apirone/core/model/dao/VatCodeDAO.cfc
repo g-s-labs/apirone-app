@@ -25,6 +25,9 @@
 
 		<cfargument name="limit" required="true" type="Numeric" default="0">
         <cfargument name="offset" required="true" type="Numeric" default="0">
+		<!--- solo i codici attivi ( selezionabili ), più includeId se non vuoto ( il codice del preventivo aperto ) --->
+		<cfargument name="activeOnly" type="Boolean" default="false">
+		<cfargument name="includeId" type="String" default="">
 
 		<cfif !request.loadFromVerticale>
 			<cfreturn super.listMockedVatCode()>
@@ -37,6 +40,14 @@
 			FROM
 				verticale_vat_codes
 			WHERE 1=1
+			<cfif arguments.activeOnly>
+				AND (
+					active
+					<cfif Len( arguments.includeId )>
+						OR ivacod = <cfqueryparam cfsqltype="varchar" value="#arguments.includeId#">
+					</cfif>
+				)
+			</cfif>
 			<cfif arguments.limit GTE 0>
 				LIMIT 
 					<cfqueryparam cfsqltype="integer" value="#arguments.limit#">

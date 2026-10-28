@@ -23,7 +23,7 @@ component extends="com.apirone.core.controller.AbsController" {
 		prc.baseUrl = baseUrl;
 		prc.quotation = quotation;
 
-		prc.page = getData().page;
+		prc.page = getData( quotation.getVatCode()?.getId() ?: "" ).page;
 		prc.page[ "quotation" ] = { "id" = quotation.getId() };
 		prc.page[ "canEdit" ]   = true;
 		prc.page[ "canSee" ]    = false;
@@ -83,7 +83,7 @@ component extends="com.apirone.core.controller.AbsController" {
 
 		prc.quotation = quotation;
 
-		prc.page = getData().page;
+		prc.page = getData( quotation.getVatCode()?.getId() ?: "" ).page;
 		prc.page[ "quotation" ]["id"] = quotation.getId();
 		prc.page[ "quotation" ]["exported"] = quotation.getExported();
 		prc.page[ "quotation" ]["sentToClient"] = quotation.getSentToClient() ?: false;
@@ -152,7 +152,8 @@ component extends="com.apirone.core.controller.AbsController" {
 		private methods
 	*/
 
-	private function getData(){
+	// vatCodeId: il codice IVA del preventivo aperto, che resta nella tendina anche se non più attivo
+	private function getData( String vatCodeId = "" ){
 		var page = {};
 		var memy = super.getMementify();
 
@@ -163,7 +164,7 @@ component extends="com.apirone.core.controller.AbsController" {
 		page[ "paymentMethods" ] = memy.convertList( super.fire( "paymentMethod.list" ) );
 		page[ "currencies" ]     = memy.convertList( super.fire( "currency.list" ) );
 		page[ "frames" ]         = memy.convertList( super.fire( "frame.list" ), "minimal" );
-		page[ "vatCodes" ]       = memy.convertList( super.fire( "vatCode.list" ) );
+		page[ "vatCodes" ]       = memy.convertList( super.fire( "vatCode.list", { activeOnly = true, includeId = arguments.vatCodeId } ) );
 		page[ "techUsers" ]      = memy.convertList( super.fire( "user.list", { roleTypeId="TEC", hasUtenteVerticale=true } ) );
 		page[ "saleUsers" ]      = memy.convertList( super.fire( "user.list", { roleTypeId="COM", hasUtenteVerticale=true } ) );
 
