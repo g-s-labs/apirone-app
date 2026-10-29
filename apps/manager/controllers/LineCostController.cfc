@@ -5,7 +5,6 @@ component extends="com.apirone.core.controller.AbsController" {
 
 		prc.page['categories'] = super.fire( "ProductCategory.list" );
 		prc.page['lines']      = super.fire( "Line.list" );
-		prc.page['finishes']   = super.fire( "Finish.list" );
 
 		prc.jsFiles.add( "app-line-cost" );
 

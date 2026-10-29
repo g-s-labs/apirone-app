@@ -24,7 +24,7 @@
 											<select class="form-control me-2" name="categoryId"
 												data-role="combobox"
 												data-placeholder="-- Seleziona categoria"
-												data-bind="source: categories, value: selectedCategory, events: { change: loadLines }"
+												data-bind="source: categories, value: selectedCategory, events: { change: loadSearchLines }"
 												data-value-field="id"
 												data-text-field="name"
 												data-filter="contains">
@@ -36,7 +36,7 @@
 											<select class="form-control" name="lineId"
 												data-role="combobox"
 												data-placeholder="-- Seleziona linea"
-												data-bind="source: lines, value: selectedLine, events: { change: loadFinishes }" 
+												data-bind="source: searchLines, value: selectedLine, events: { change: loadSearchFinishes }" 
 												data-value-field="id"
 												data-text-field="name"
 												data-filter="contains">
@@ -48,7 +48,7 @@
 											<select class="form-control" name="finishId"
 												data-role="combobox"
 												data-placeholder="-- Seleziona finitura"
-												data-bind="source: finishes, value: selectedFinish" 
+												data-bind="source: searchFinishes, value: selectedFinish" 
 												data-value-field="id"
 												data-text-field="name"
 												data-filter="contains">

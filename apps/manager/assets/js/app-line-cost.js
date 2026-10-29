@@ -19,64 +19,73 @@ AP.lineCost.list = ( function() {
         items: NM.kendo.dataSource( { url: "/manager/ajax/lines_costs" } ),
     };
 
+    var emptyItem = function() {
+        return { "id": "", "name": "" };
+    };
+
+    // Linee della categoria ( AP.page.lines ha le categorie di ogni linea )
+    var linesOfCategory = function( categoryId ) {
+        if ( !categoryId ) return [];
+        return AP.page.lines.filter( function( line ) {
+            return line.categories.some( cat => cat.id == categoryId );
+        } );
+    };
+
+    // Solo le finiture che hanno prodotti della categoria e linea scelte
+    // ( stesso endpoint dei configuratori, che legge da catalog_bundles )
+    var loadFinishesInto = function( dataSource, categoryId, lineId ) {
+        dataSource.data( [] );
+        if ( !categoryId || !lineId ) return;
+
+        NM.util.ajax( {
+            method: "GET",
+            url: "/manager/ajax/quotations/finishes/" + encodeURIComponent( categoryId ) + "/" + encodeURIComponent( lineId ),
+            callback: {
+                done: function( xhr ) {
+                    dataSource.data( xhr.data || [] );
+                }
+            },
+        } );
+    };
+
     var viewModel = kendo.observable( {
         rows: dataSources.items,
         categories: AP.page.categories,
-        category: {
-            "id": "",
-            "name": ""
-        },
-        selecteCategory: {
-            "id": "",
-            "name": ""
-        },
-        allLines: AP.page.lines,
+
+        // dialog "Aggiungi costo"
+        category: emptyItem(),
         lines: new kendo.data.DataSource(),
-        line: {
-            "id": "",
-            "name": ""
-        },
-        selecteLine: {
-            "id": "",
-            "name": ""
-        },
-        allFinishes: AP.page.finishes,
+        line: emptyItem(),
         finishes: new kendo.data.DataSource(),
-        finish: {
-            "id": "",
-            "name": ""
-        },
-        selecteFinish: {
-            "id": "",
-            "name": ""
-        },
+        finish: emptyItem(),
+
+        // filtri di ricerca
+        selectedCategory: emptyItem(),
+        searchLines: new kendo.data.DataSource(),
+        selectedLine: emptyItem(),
+        searchFinishes: new kendo.data.DataSource(),
+        selectedFinish: emptyItem(),
 
         loadLines: function() {
-            this.get('lines').data([]);
-            let allLines = this.get("allLines");
-            const category = this.get('category')
-            const categoryLines = allLines.filter(function(line) {
-                return line.categories.filter(cat => cat.id == category.id).length > 0
-            })
-            this.get('lines').data(categoryLines);
-            this.set('line', { "id": "", "name": ""})
-            this.set('model', { "id": "", "name": ""})
+            this.get( "lines" ).data( linesOfCategory( this.get( "category.id" ) ) );
+            this.set( "line", emptyItem() );
+            this.loadFinishes();
         },
 
         loadFinishes: function() {
-            this.get('finishes').data([]);
-            let allFinishes = this.get("allFinishes");
-            const category = this.get('category')
-            const categoryFinishes = allFinishes.filter(function(finish) {
-                return finish.categories.filter(cat => cat.id == category.id).length > 0
-            })
-            categoryFinishes.forEach(function(cf) {
-                if (cf.texts.find(t => t.lang.id == 'IT' && t.name != '')) {
-                    cf.name = cf.texts.find(t => t.lang.id == 'IT' && t.name != '').name
-                }
-            })
-            this.get('finishes').data(categoryFinishes);
-            this.set('finish', { "id": "", "name": ""})
+            this.set( "finish", emptyItem() );
+            loadFinishesInto( this.get( "finishes" ), this.get( "category.id" ), this.get( "line.id" ) );
+        },
+
+        loadSearchLines: function() {
+            this.get( "searchLines" ).data( linesOfCategory( this.get( "selectedCategory.id" ) ) );
+            this.set( "selectedLine", emptyItem() );
+            this.loadSearchFinishes();
+        },
+
+        loadSearchFinishes: function() {
+            this.set( "selectedFinish", emptyItem() );
+            loadFinishesInto( this.get( "searchFinishes" ), this.get( "selectedCategory.id" ), this.get( "selectedLine.id" ) );
         },
 
         search: function( event ) {
