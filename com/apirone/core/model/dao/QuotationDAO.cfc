@@ -239,6 +239,7 @@
 				reclamo_anno,
 				reclamo_numero,
 				reclamo_alfa,
+				custom_payment_method,
 				data_evasione,
 				sent_to_client,
 				data_conferma_ordine,
@@ -353,6 +354,7 @@
 				<cfqueryparam cfsqltype="Varchar" value="#arguments.quotation.getReclamoAnno() ?: ''#">,
 				<cfqueryparam cfsqltype="Integer" value="#arguments.quotation.getReclamoNumero() ?: ''#" null="#isNull(arguments.quotation.getReclamoNumero())#">,
 				<cfqueryparam cfsqltype="Varchar" value="#arguments.quotation.getReclamoAlfa() ?: ''#">,
+				<cfqueryparam cfsqltype="Varchar" value="#arguments.quotation.getCustomPaymentMethod() ?: ''#">,
 				<cfif !isNull(arguments.quotation.getDataEvasione()) && IsDate(arguments.quotation.getDataEvasione())>
 					<cfqueryparam cfsqltype="Date" value="#arguments.quotation.getDataEvasione()#">
 				<cfelse>
@@ -566,6 +568,7 @@
 				reclamo_anno = <cfqueryparam cfsqltype="Varchar" value="#arguments.quotation.getReclamoAnno() ?: ''#">,
 				reclamo_numero = <cfqueryparam cfsqltype="Integer" value="#arguments.quotation.getReclamoNumero() ?: ''#" null="#isNull(arguments.quotation.getReclamoNumero())#">,
 				reclamo_alfa = <cfqueryparam cfsqltype="Varchar" value="#arguments.quotation.getReclamoAlfa() ?: ''#">,
+				custom_payment_method = <cfqueryparam cfsqltype="Varchar" value="#arguments.quotation.getCustomPaymentMethod() ?: ''#">,
 				data_evasione =
 					<cfif !isNull(arguments.quotation.getDataEvasione()) && IsDate(arguments.quotation.getDataEvasione())>
 						<cfqueryparam cfsqltype="Date" value="#arguments.quotation.getDataEvasione()#">

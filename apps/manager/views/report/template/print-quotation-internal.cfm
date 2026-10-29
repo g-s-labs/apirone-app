@@ -24,6 +24,12 @@
 										<td style="width: 40%;border: 0; border-bottom: 1px solid black; border-right: 1px solid black;">Tipo Pagamento</td>
 										<td style="width: 60%;border: 0; border-bottom: 1px solid black; border-right: 1px solid black;">#args.data.quotation.getPaymentMethodName()#</td>
 									</tr>
+									<cfif Len( args.data.quotation.getCustomPaymentMethod() ?: "" )>
+										<tr>
+											<td style="width: 40%;border: 0; border-bottom: 1px solid black; border-right: 1px solid black;">Modalità di pagamento</td>
+											<td style="width: 60%;border: 0; border-bottom: 1px solid black; border-right: 1px solid black;">#EncodeForHTML( args.data.quotation.getCustomPaymentMethod() )#</td>
+										</tr>
+									</cfif>
 								</table>
 							</td>
 						</tr>

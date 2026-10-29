@@ -230,6 +230,10 @@ component extends="com.apirone.core.controller.AbsController" {
 		if ( !isNull(json.reclamoAnno) ) quotation.setReclamoAnno( Left( Trim( json.reclamoAnno ), 4 ) );
 		if ( !isNull(json.reclamoNumero) && IsNumeric(json.reclamoNumero) ) quotation.setReclamoNumero( Int( json.reclamoNumero ) );
 		if ( !isNull(json.reclamoAlfa) ) quotation.setReclamoAlfa( Left( Trim( json.reclamoAlfa ), 2 ) );
+		// la modalità di pagamento vale solo con il pagamento 26 SCADENZE DA IMPUTARE
+		if ( !isNull(json.customPaymentMethod) ) {
+			quotation.setCustomPaymentMethod( quotation.getPaymentMethod().getId() == 26 ? Left( Trim( json.customPaymentMethod ), 255 ) : "" );
+		}
 		if ( structKeyExists(json, "dataEvasione") && !isNull(json.dataEvasione) && IsDate(json.dataEvasione) ) quotation.setDataEvasione( json.dataEvasione );
 		if ( !isNull(json.codiceSdi) ) quotation.setCodiceSdi( json.codiceSdi );
 

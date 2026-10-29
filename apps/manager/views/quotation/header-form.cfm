@@ -359,6 +359,14 @@
 							</div>
 						</div>
 
+						<!--- solo con pagamento 26 SCADENZE DA IMPUTARE ( syncCustomPaymentMethod ) --->
+						<div class="form-group row mb-3" data-bind="visible: showCustomPaymentMethod">
+							<label class="col-3 control-label text-sm-end pt-2">Modalità di pagamento</label>
+							<div class="col-9">
+								<input type="text" class="form-control" maxlength="255" data-bind="value: detailForm.data.customPaymentMethod">
+							</div>
+						</div>
+
 						<div class="form-group row mb-3">
 							<label class="col-3 control-label text-sm-end pt-2">Aliquota IVA</label>
 							<div class="col-9">

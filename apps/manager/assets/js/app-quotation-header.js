@@ -170,6 +170,7 @@ AP.quotation.header = ( function() {
         saleUsers: new kendo.data.DataSource(),
         techUsers: new kendo.data.DataSource(),
         // Tendine a cascata del tab Reclamo ( vedi refreshClaimLists )
+        showCustomPaymentMethod: false,
         claimAnni: [],
         claimNumeri: [],
         claimAlfa: [],
@@ -509,6 +510,17 @@ AP.quotation.header = ( function() {
         }
     }
 
+    // Pagamento 26 SCADENZE DA IMPUTARE: solo con questo si mostra ( e si salva ) la modalità di pagamento.
+    var PAYMENT_SCADENZE_DA_IMPUTARE = "26";
+
+    // Flag semplice e non binding calcolato: il bulk set di detailForm.data al caricamento
+    // non scatena il change di detailForm.data.paymentMethod.
+    function syncCustomPaymentMethod() {
+        var pm = viewModel.get( "detailForm.data.paymentMethod" );
+        var pmId = pm ? ( typeof pm === "object" ? pm.id : pm ) : "";
+        viewModel.set( "showCustomPaymentMethod", String( pmId ) === PAYMENT_SCADENZE_DA_IMPUTARE );
+    }
+
     // Fatture soggette a reclamo ( copia locale di Verticale ): [ { anno, numero, alfa } ]
     var claimInvoices = [];
     var claimRefreshing = false;
@@ -639,6 +651,7 @@ AP.quotation.header = ( function() {
                     setTimeout( function() {
                         syncAgentiEnabled();
                         refreshClaimLists();
+                        syncCustomPaymentMethod();
 
                         if ( xhr.data.customer.id ) {
                             var customerAc = $( "#qt-customer" ).data( "kendoAutoComplete" );
@@ -745,6 +758,10 @@ AP.quotation.header = ( function() {
 		} );
 
 		viewModel.bind("change", function(e) {
+
+			if ( e.field === "detailForm.data.paymentMethod" ) {
+				syncCustomPaymentMethod();
+			}
 
 			// Cambiando un campo del reclamo si puliscono quelli sotto ( anno -> numero -> alfa ).
 			if ( !claimRefreshing && ( e.field === "detailForm.data.reclamoAnno" || e.field === "detailForm.data.reclamoNumero" ) ) {

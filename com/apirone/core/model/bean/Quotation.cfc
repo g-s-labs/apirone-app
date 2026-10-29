@@ -12,6 +12,8 @@ component extends="com.apirone.core.model.bean.AbsBean" accessors="true" {
 	property name="opportunity" type="com.apirone.core.model.bean.Opportunity";
 	property name="lead" type="com.apirone.core.model.bean.Lead";
 	property name="paymentMethod" type="com.apirone.core.model.bean.PaymentMethod";
+	// modalità di pagamento ( testo libero ), solo con pagamento 26 SCADENZE DA IMPUTARE
+	property name="customPaymentMethod" type="String";
 	property name="currency" type="com.apirone.core.model.bean.Currency";
 	property name="statusHistory" type="com.apirone.core.model.bean.QuotationStatusHistory";
 	property name="lang" type="com.apirone.core.model.bean.Lang";

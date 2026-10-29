@@ -48,6 +48,13 @@
 										<td style="width: 40%;border: 0; border-bottom: 1px solid black; border-right: 1px solid black;">#printLabel('paymentMethod', langId)#</td>
 										<td style="width: 60%;border: 0; border-bottom: 1px solid black; border-right: 1px solid black; padding-left: 5px;"><cfif isProforma>#proformaAdvanceLabel#<cfelse>#args.data.quotation.getPaymentMethodName()#</cfif></td>
 									</tr>
+									<!--- modalità di pagamento: solo con pagamento 26 SCADENZE DA IMPUTARE ( altrimenti è vuota ) --->
+									<cfif !isProforma AND Len( args.data.quotation.getCustomPaymentMethod() ?: "" )>
+										<tr>
+											<td style="width: 40%;border: 0; border-bottom: 1px solid black; border-right: 1px solid black;">#printLabel('customPaymentMethod', langId)#</td>
+											<td style="width: 60%;border: 0; border-bottom: 1px solid black; border-right: 1px solid black; padding-left: 5px;">#EncodeForHTML( args.data.quotation.getCustomPaymentMethod() )#</td>
+										</tr>
+									</cfif>
 									<tr>
 										<td style="width: 40%;border: 0; border-bottom: 1px solid black; border-right: 1px solid black; vertical-align: top;">#printLabel('salesAgent', langId)#</td>
 										<td style="width: 60%;border: 0; border-bottom: 1px solid black; border-right: 1px solid black; padding-left: 5px;">#printSalesAgent(salesAgent = args.data.quotation.getSalesAgent(), langId = langId)#</td>

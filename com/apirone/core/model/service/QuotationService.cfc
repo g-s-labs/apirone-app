@@ -1599,6 +1599,9 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			"MMESEREC" = quotation.getReclamoAnno() ?: "", // reclamo: anno fattura
 			"MMDOCREC" = quotation.getReclamoNumero() ?: 0, // reclamo: numero fattura
 			"MMALFREC" = quotation.getReclamoAlfa() ?: "", // reclamo: alfa fattura
+			// TODO modalità di pagamento ( pagamento 26 SCADENZE DA IMPUTARE ): campo Verticale ancora da definire,
+			// sostituire VERTICALE_CAMPO_MODALITA_PAGAMENTO con il nome vero e togliere il commento
+			// "VERTICALE_CAMPO_MODALITA_PAGAMENTO" = quotation.getCustomPaymentMethod() ?: "",
 			"MMNUMLIS" = 1,
 			"CFLINGUA" = !isNull(quotation.getLang()) ? UCase(quotation.getLang().getId()) : "IT",
 			"MMCODAGE" = (!isNull(quotation.getAgente1()) && Len(quotation.getAgente1())) ? getAccountService().get(quotation.getAgente1()).getIdAgenteVerticale() : null,
@@ -1902,6 +1905,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			if ( Len( r.reclamo_anno ) ) bean.setReclamoAnno( r.reclamo_anno );
 			if ( !IsNull( r.reclamo_numero ) ) bean.setReclamoNumero( r.reclamo_numero );
 			if ( Len( r.reclamo_alfa ) ) bean.setReclamoAlfa( r.reclamo_alfa );
+			if ( Len( r.custom_payment_method ) ) bean.setCustomPaymentMethod( r.custom_payment_method );
 			if ( IsDate( r.data_evasione ) ) bean.setDataEvasione( r.data_evasione );
 			if ( !IsNull( r.sent_to_client ) ) bean.setSentToClient( r.sent_to_client );
 			if ( !IsNull( r.data_conferma_ordine ) && IsDate( r.data_conferma_ordine ) ) bean.setDataConfermaOrdine( r.data_conferma_ordine );
@@ -2003,6 +2007,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		if ( Len( arguments.record.reclamo_anno ) ) bean.setReclamoAnno( arguments.record.reclamo_anno );
 		if ( !IsNull( arguments.record.reclamo_numero ) ) bean.setReclamoNumero( arguments.record.reclamo_numero );
 		if ( Len( arguments.record.reclamo_alfa ) ) bean.setReclamoAlfa( arguments.record.reclamo_alfa );
+		if ( Len( arguments.record.custom_payment_method ) ) bean.setCustomPaymentMethod( arguments.record.custom_payment_method );
 		if ( IsDate( arguments.record.data_evasione ) ) bean.setDataEvasione( arguments.record.data_evasione );
 		if ( !IsNull( arguments.record.sent_to_client ) ) bean.setSentToClient( arguments.record.sent_to_client );
 		if ( !IsNull( arguments.record.data_conferma_ordine ) && IsDate( arguments.record.data_conferma_ordine ) ) bean.setDataConfermaOrdine( arguments.record.data_conferma_ordine );
