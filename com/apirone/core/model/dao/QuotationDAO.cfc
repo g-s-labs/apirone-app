@@ -756,7 +756,8 @@
 				MMPERPRO, MMPERPR2, MMPERPR3, MMPERPR4, MMPERPR5,
 				MMRIFSPE, CFTIPCLF, CFCODDES, MMORDPRO, MMNOTPOS, MMANNDET, CFEMAIL, MMANNTES,
 				MMRIF_PO, MMCODIVA,
-				MMESEREC, MMDOCREC, MMALFREC
+				MMESEREC, MMDOCREC, MMALFREC,
+				MMNOTPAG
 			)
 			VALUES (
 				<cfqueryparam value="#left(arguments.data.CF_IDCLI,36)#" cfsqltype="varchar">,
@@ -831,7 +832,8 @@
 				<cfqueryparam value="#arguments.data.MMCODIVA ?: ''#" cfsqltype="varchar">,
 				<cfqueryparam value="#left(arguments.data.MMESEREC ?: '',4)#" cfsqltype="varchar">,
 				<cfqueryparam value="#arguments.data.MMDOCREC ?: 0#" cfsqltype="integer">,
-				<cfqueryparam value="#left(arguments.data.MMALFREC ?: '',2)#" cfsqltype="varchar">
+				<cfqueryparam value="#left(arguments.data.MMALFREC ?: '',2)#" cfsqltype="varchar">,
+				<cfqueryparam value="#left(arguments.data.MMNOTPAG ?: '',255)#" cfsqltype="varchar">
 			)
 		</cfquery>
 

@@ -1599,9 +1599,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			"MMESEREC" = quotation.getReclamoAnno() ?: "", // reclamo: anno fattura
 			"MMDOCREC" = quotation.getReclamoNumero() ?: 0, // reclamo: numero fattura
 			"MMALFREC" = quotation.getReclamoAlfa() ?: "", // reclamo: alfa fattura
-			// TODO modalità di pagamento ( pagamento 26 SCADENZE DA IMPUTARE ): campo Verticale ancora da definire,
-			// sostituire VERTICALE_CAMPO_MODALITA_PAGAMENTO con il nome vero e togliere il commento
-			// "VERTICALE_CAMPO_MODALITA_PAGAMENTO" = quotation.getCustomPaymentMethod() ?: "",
+			"MMNOTPAG" = quotation.getCustomPaymentMethod() ?: "", // modalità di pagamento ( solo con pagamento 26 SCADENZE DA IMPUTARE )
 			"MMNUMLIS" = 1,
 			"CFLINGUA" = !isNull(quotation.getLang()) ? UCase(quotation.getLang().getId()) : "IT",
 			"MMCODAGE" = (!isNull(quotation.getAgente1()) && Len(quotation.getAgente1())) ? getAccountService().get(quotation.getAgente1()).getIdAgenteVerticale() : null,
