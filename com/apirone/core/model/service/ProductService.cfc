@@ -20,10 +20,14 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		return build( arguments.productId );
 	}
 
+	// La stessa linea + modello + finitura può esistere in più categorie ( es. ACCESSORI
+	// RECEPTION e RICAMBI ): senza categoria i prodotti trovati possono essere più di uno
+	// e il risultato è null.
 	public com.apirone.core.model.bean.Product function getByParams(
 		required String lineId,
 		required String finishId,
-		required String modelId
+		required String modelId,
+		Numeric categoryId
 	){
 		var record = getDao().find( argumentCollection = arguments );
 
@@ -209,7 +213,8 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 	public com.apirone.core.model.bean.Outcome function deleteByParams(
 		required String lineId,
 		required String finishId,
-		required String modelId
+		required String modelId,
+		Numeric categoryId
 	){
 		var outcome = super.bean( "Outcome" );
 

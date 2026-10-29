@@ -124,7 +124,9 @@ component extends="com.apirone.core.controller.AbsController" {
 			}
 		}
 
-		var productsList = super.fire( "product.list", { lineId = rc.id } );
+		// solo i prodotti di questa categoria: la stessa linea + modello + finitura può
+		// esistere anche in altre categorie ( es. RICAMBI )
+		var productsList = super.fire( "product.list", { lineId = rc.id, categoryId = Int( rc.categoryId ) } );
 
 		for ( var product in productsList ) {
 			prc.existingProducts.add( "#product.getModel().getId()#__#product.getFinish().getId()#" );

@@ -70,7 +70,9 @@ component extends="com.apirone.core.controller.AbsController" {
 
 			prc.page[ "lineId" ] = prc.line.getId();
 
-			var products = super.fire( "product.list", { lineId = prc.line.getId() } );
+			// solo la categoria del prodotto: la stessa linea + modello + finitura può esistere
+			// anche in altre categorie e il menu sceglie il prodotto per modello + finitura
+			var products = super.fire( "product.list", { lineId = prc.line.getId(), categoryId = prc.category.getId() } );
 
 			prc.page[ "products" ] = [];
 
@@ -214,7 +216,7 @@ component extends="com.apirone.core.controller.AbsController" {
 		if ( Len( rc.categoryId ) ) {
 			var category = super.service( "productCategory" ).get( rc.categoryId )
 
-			searchArgs.lineId      = rc.lineId;
+			searchArgs.categoryId  = rc.categoryId;
 			filters[ "Categoria" ] = category.getName();
 		}
 

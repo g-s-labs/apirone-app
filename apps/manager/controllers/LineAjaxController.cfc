@@ -181,9 +181,10 @@ component extends="com.apirone.core.controller.AbsController" {
 		var result = super.getResult();
 
 		var product = super.service( "Product" ).getByParams(
-			lineId   = rc.id,
-			finishId = json.finishId,
-			modelId  = json.modelId
+			lineId     = rc.id,
+			finishId   = json.finishId,
+			modelId    = json.modelId,
+			categoryId = json.categoryId
 		);
 
 		if ( IsNull( product ) ) {

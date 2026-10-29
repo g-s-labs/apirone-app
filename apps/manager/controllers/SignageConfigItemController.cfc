@@ -39,7 +39,8 @@ component extends="com.apirone.core.controller.AbsController" {
 		prc.page[ "lineId" ]            = lineId;
 		prc.page[ "signageConfigItem" ] = memy.convert( item );
 
-		var products = super.fire( "product.list", { lineId = lineId } );
+		// solo la categoria del bundle: la stessa linea + modello + finitura può esistere anche in altre categorie
+		var products = super.fire( "product.list", { lineId = lineId, categoryId = signage.getCatalogBundle().getCategory().getId() } );
 
 		prc.page[ "products" ] = super.eachParallelAndReorder( products, function( item, index ){
 			var row = super.getMementify().convert( item, "menu" );
