@@ -70,7 +70,12 @@
 						</div>
 					</div>
 					<div class="row mt-3 mb-2">
-						<div class="col-8 mt-2">Spese di trasporto</div>
+						<div class="col-4 mt-2">Spese di trasporto</div>
+						<div class="col-4">
+							<input class="form-control" name="noteTrasporto" maxlength="20"
+								placeholder="Note di trasporto" title="Note di trasporto ( max 20 caratteri )"
+								data-bind="value: pricing.data.noteTrasporto, enabled: canEdit">
+						</div>
 						<div class="col-4 d-flex align-items-center">
 							<input class="form-control text-end me-1" name="shippingCost" 
 								placeholder="€" data-bind="value: pricing.data.shippingCost, enabled: canEdit">

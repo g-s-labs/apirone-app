@@ -410,6 +410,12 @@
 								<td>#LSNumberFormat( args.data.quotationPrice.getShippingCost(), "9,999.99", "it_IT" )# €</td>
 							</tr>
 						</cfif>
+						<cfif Len( args.data.quotation.getNoteTrasporto() ?: "" )>
+							<tr>
+								<td></td>
+								<td>#EncodeForHTML( args.data.quotation.getNoteTrasporto() )#</td>
+							</tr>
+						</cfif>
 						<tr>
 							<td><strong>#printLabel('invoiceTotal', langId)#</strong></td>
 							<td><strong>#LSNumberFormat( args.data.quotationPrice.getCalculatedTotals()['total'], "9,999.99", "it_IT" )# €</strong></td>

@@ -50,6 +50,9 @@ component extends="com.apirone.core.model.bean.AbsBean" accessors="true" {
 	property name="sentToClient" type="Boolean";
 	property name="dataConfermaOrdine" type="Date";
 	property name="codiceSdi" type="String";
+	// note di trasporto ( max 20 caratteri ): si salvano dal riquadro dei totali ( updateNoteTrasporto ),
+	// non dalla testata; non vanno a Verticale
+	property name="noteTrasporto" type="String";
 
 	public Quotation function init(){
 		return this;

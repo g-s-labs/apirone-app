@@ -240,6 +240,7 @@
 				reclamo_numero,
 				reclamo_alfa,
 				custom_payment_method,
+				note_trasporto,
 				data_evasione,
 				sent_to_client,
 				data_conferma_ordine,
@@ -355,6 +356,7 @@
 				<cfqueryparam cfsqltype="Integer" value="#arguments.quotation.getReclamoNumero() ?: ''#" null="#isNull(arguments.quotation.getReclamoNumero())#">,
 				<cfqueryparam cfsqltype="Varchar" value="#arguments.quotation.getReclamoAlfa() ?: ''#">,
 				<cfqueryparam cfsqltype="Varchar" value="#arguments.quotation.getCustomPaymentMethod() ?: ''#">,
+				<cfqueryparam cfsqltype="Varchar" value="#Left( arguments.quotation.getNoteTrasporto() ?: '', 20 )#" null="#!Len( arguments.quotation.getNoteTrasporto() ?: '' )#">,
 				<cfif !isNull(arguments.quotation.getDataEvasione()) && IsDate(arguments.quotation.getDataEvasione())>
 					<cfqueryparam cfsqltype="Date" value="#arguments.quotation.getDataEvasione()#">
 				<cfelse>
@@ -589,6 +591,32 @@
 		</cfquery>
 
 		<cfreturn arguments.quotation.getId()>
+	</cffunction>
+
+	<!--- Le note di trasporto si scrivono dal riquadro dei totali e non da update(): la testata
+	      ricostruisce il bean dal suo JSON, che non le porta --->
+	<cffunction name="updateNoteTrasporto" returntype="void">
+		<cfargument name="quotationId" type="String" required="true">
+		<cfargument name="noteTrasporto" type="String" required="true">
+
+		<cfquery datasource="apirone">
+			UPDATE quotations
+			SET note_trasporto = <cfqueryparam cfsqltype="Varchar" value="#Left( Trim( arguments.noteTrasporto ), 20 )#" null="#!Len( Trim( arguments.noteTrasporto ) )#">,
+				updated_at = now()
+			WHERE quotation_id = <cfqueryparam cfsqltype="Varchar" value="#arguments.quotationId#">::uuid
+		</cfquery>
+	</cffunction>
+
+	<cffunction name="readNoteTrasporto" returntype="String">
+		<cfargument name="quotationId" type="String" required="true">
+
+		<cfquery name="local.q" datasource="apirone">
+			SELECT note_trasporto
+			FROM quotations
+			WHERE quotation_id = <cfqueryparam cfsqltype="Varchar" value="#arguments.quotationId#">::uuid
+		</cfquery>
+
+		<cfreturn local.q.note_trasporto ?: "">
 	</cffunction>
 
 	<cffunction name="markAsSent" returntype="void">

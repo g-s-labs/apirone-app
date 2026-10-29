@@ -334,6 +334,15 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		return arguments.quotation.getId();
 	}
 
+	// Note di trasporto ( max 20 caratteri ): lette e scritte dal riquadro dei totali
+	public void function updateNoteTrasporto( required String quotationId, required String noteTrasporto ){
+		getDao().updateNoteTrasporto( arguments.quotationId, arguments.noteTrasporto );
+	}
+
+	public String function getNoteTrasporto( required String quotationId ){
+		return getDao().readNoteTrasporto( arguments.quotationId );
+	}
+
 	/**
 	 * Codice export di una voce di preventivo, calcolato senza scrivere nulla.
 	 *
@@ -1904,6 +1913,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 			if ( !IsNull( r.reclamo_numero ) ) bean.setReclamoNumero( r.reclamo_numero );
 			if ( Len( r.reclamo_alfa ) ) bean.setReclamoAlfa( r.reclamo_alfa );
 			if ( Len( r.custom_payment_method ) ) bean.setCustomPaymentMethod( r.custom_payment_method );
+			if ( Len( r.note_trasporto ) ) bean.setNoteTrasporto( r.note_trasporto );
 			if ( IsDate( r.data_evasione ) ) bean.setDataEvasione( r.data_evasione );
 			if ( !IsNull( r.sent_to_client ) ) bean.setSentToClient( r.sent_to_client );
 			if ( !IsNull( r.data_conferma_ordine ) && IsDate( r.data_conferma_ordine ) ) bean.setDataConfermaOrdine( r.data_conferma_ordine );
@@ -2006,6 +2016,7 @@ component extends="com.apirone.core.model.service.AbsService" accessors="true" {
 		if ( !IsNull( arguments.record.reclamo_numero ) ) bean.setReclamoNumero( arguments.record.reclamo_numero );
 		if ( Len( arguments.record.reclamo_alfa ) ) bean.setReclamoAlfa( arguments.record.reclamo_alfa );
 		if ( Len( arguments.record.custom_payment_method ) ) bean.setCustomPaymentMethod( arguments.record.custom_payment_method );
+		if ( Len( arguments.record.note_trasporto ) ) bean.setNoteTrasporto( arguments.record.note_trasporto );
 		if ( IsDate( arguments.record.data_evasione ) ) bean.setDataEvasione( arguments.record.data_evasione );
 		if ( !IsNull( arguments.record.sent_to_client ) ) bean.setSentToClient( arguments.record.sent_to_client );
 		if ( !IsNull( arguments.record.data_conferma_ordine ) && IsDate( arguments.record.data_conferma_ordine ) ) bean.setDataConfermaOrdine( arguments.record.data_conferma_ordine );

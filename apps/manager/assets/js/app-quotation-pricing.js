@@ -266,6 +266,7 @@ AP.quotation.totalPricing = ( function() {
                 },
 
                 shippingCost: 0,
+                noteTrasporto: "",
                 totalGoods: 0,
                 total: 0
             },
@@ -349,7 +350,7 @@ AP.quotation.totalPricing = ( function() {
         // senza aver ancora cliccato "Salva". Pulito solo dopo il POST riuscito.
         fields.boxTotalPricing.on(
             "input change",
-            "input[name='discount1'], input[name='discount2'], input[name='shippingCost'], input[name='flatDiscount']",
+            "input[name='discount1'], input[name='discount2'], input[name='shippingCost'], input[name='noteTrasporto'], input[name='flatDiscount']",
             markDirty
         );
 

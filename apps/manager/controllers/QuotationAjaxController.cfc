@@ -571,6 +571,10 @@ component extends="com.apirone.core.controller.AbsController" {
 
 		service.save( pricing );
 
+		if ( StructKeyExists( json, "noteTrasporto" ) ) {
+			super.service( "Quotation" ).updateNoteTrasporto( rc.id, json.noteTrasporto ?: "" );
+		}
+
 		var data = getTotals( rc.id );
 
 		event.setValue( "result", data );
@@ -738,6 +742,8 @@ component extends="com.apirone.core.controller.AbsController" {
 		var counters = getQuantities( quotationId );
 
 		var values = result.getCalculatedTotals();
+		// non è un totale ma sta nel riquadro, accanto alle spese di trasporto
+		values[ "noteTrasporto" ] = super.service( "Quotation" ).getNoteTrasporto( quotationId );
 
 		var data = {
 			"counters" = counters,
