@@ -8,7 +8,7 @@
 				<span data-bind="text: type.name"></span>
 				<br>
 				<span class="small-code">(<span data-bind="text: type.id"></span> <span data-bind="text: id"></span>)</span>
-				## if ( type.id == "PROD_ITEM_GEN" ) { ##
+				## if ( data.type && data.type.id == "PROD_ITEM_GEN" ) { ##
 				<br>
 				<span class="small text-warning">Non usato nel calcolo: è sempre uguale al ricarico dell'articolo. Verrà rimosso.</span>
 				## } ##
