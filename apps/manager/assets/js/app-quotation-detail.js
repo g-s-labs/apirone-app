@@ -2020,7 +2020,8 @@ AP.quotation.printModal = (function () {
 			return null;
 		}
 
-		if (rawPercent && (isNaN(percentuale) || percentuale <= 0 || percentuale > 100)) {
+		// 0 è ammesso: proforma senza anticipo ( "0% anticipato", totale a pagare 0 )
+		if (rawPercent && (isNaN(percentuale) || percentuale < 0 || percentuale > 100)) {
 			showProformaError("Indica una percentuale di anticipo fra 0 e 100.");
 			$(PROFORMA_FIELDS.percentuale).trigger("focus");
 			return null;
