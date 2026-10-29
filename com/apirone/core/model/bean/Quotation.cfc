@@ -64,6 +64,11 @@ component extends="com.apirone.core.model.bean.AbsBean" accessors="true" {
 		}
 	}
 
+	// numero/versione del preventivo da usare nei nomi dei file: "/" diventa "_"
+	public String function getFileNumber(){
+		return Replace( "#getQuotationNumber()#/#getVersionNumber()#", "/", "_", "all" );
+	}
+
 	public String function getReferentName() {
 		if ( Len( getCustomer()?.getName() ) ) {
 			return getCustomer().getName();

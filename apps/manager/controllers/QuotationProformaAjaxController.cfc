@@ -27,7 +27,7 @@ component extends="com.apirone.core.controller.AbsController" {
 	 * Il file potrebbe essere raggiunto anche direttamente sul repository
 	 * statico, ma si passa di qui per due motivi: viene servito dietro
 	 * l'autenticazione dell'applicazione, e il browser riceve un nome
-	 * leggibile (proforma_01.pdf) invece dello stored_name con l'uuid.
+	 * leggibile ("PROFORMA 140_1.pdf") invece dello stored_name con l'uuid.
 	 *
 	 * Disposition "inline": il PDF si apre nel visualizzatore. Perché funzioni
 	 * serve un Content-Type corretto — vedi la nota in nginx_foto.conf, dove
@@ -52,7 +52,8 @@ component extends="com.apirone.core.controller.AbsController" {
 		}
 
 		// nome parlante per l'utente, non lo storedName con l'uuid
-		var nomeFile = "proforma_#proforma.getProgressivo()#.pdf";
+		var quotation = super.fire( "Quotation.get", [ proforma.getQuotationId() ] );
+		var nomeFile  = "PROFORMA #quotation.getFileNumber()#.pdf";
 
 		cfheader( name = "Content-Disposition", value = "inline; filename=""#nomeFile#""" );
 		cfcontent( type = "application/pdf", file = filePath, deleteFile = false, reset = true );

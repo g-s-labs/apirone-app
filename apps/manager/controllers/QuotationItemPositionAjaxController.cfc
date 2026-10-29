@@ -137,7 +137,7 @@ component extends="com.apirone.core.controller.AbsController" {
 		var quotationItems = super.fire( "QuotationItem.list", [ "quotationZoneId" = zoneId ] );
 		var base64Image = json.image ?: "";
 
-		var saveAsName = "print-quotation-plant_#DateTimeFormat(Now(), 'yyyyMMdd-HHnnss')#.pdf";
+		var saveAsName = "OFFERTA_PIANTA #quotation.getFileNumber()#.pdf";
 
 		var orientation = "portrait";
 

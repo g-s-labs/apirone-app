@@ -13,6 +13,15 @@ component extends="com.apirone.core.controller.AbsController" {
 		'proforma'  = 'print-quotation-classic'
 	};
 
+	// Prefisso del nome del PDF per tipo di stampa ( poi " <numero>_<versione>.pdf" )
+	variables.REPORT_FILE_PREFIXES = {
+		'classic'   = 'OFFERTA',
+		'zone'      = 'OFFERTA_ZONE',
+		'photo'     = 'OFFERTA_FOTO',
+		'technical' = 'OFFERTA_TECNICA',
+		'proforma'  = 'PROFORMA'
+	};
+
 	// Tela su cui il designer disegna l'anteprima della placca, in px: fissa, e
 	// scambiata quando la placca è verticale. L'armatura ci sta dentro centrata, a
 	// non più di PLATE_CANVAS_MAX_SCALE px per mm.
@@ -144,7 +153,7 @@ component extends="com.apirone.core.controller.AbsController" {
 		```
 		quoteObj.totalSpent = total.total;
 
-		var saveAsName = "print-quotation-#printParams.report#_#printParams.groupByCategory ? 'categorie' : 'lista'#_#DateTimeFormat(Now(), 'yyyyMMdd-HHnnss')#.pdf";
+		var saveAsName = "#variables.REPORT_FILE_PREFIXES[ printParams.report ]# #quotation.getFileNumber()#.pdf";
 
 		var params = {
 			title   = "Preventivo",
